@@ -1284,6 +1284,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dns-lookup"
+version = "2.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5766087c2235fec47fafa4cfecc81e494ee679d0fd4a59887ea0919bfb0e4fc"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "socket2 0.5.10",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
 name = "document-features"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2841,7 +2853,7 @@ dependencies = [
 [[package]]
 name = "librespot-audio"
 version = "0.6.0-dev"
-source = "git+https://github.com/KUHLwasStolen/librespot.git?branch=lookup-cdn#dc88d85652f4746b9e4ef4aad59e6004e2294e81"
+source = "git+https://github.com/KUHLwasStolen/librespot.git?branch=lookup-cdn-simple#fa7fe9df8ae975b0cdc382764a95dae5e2f453f5"
 dependencies = [
  "aes",
  "bytes",
@@ -2861,7 +2873,7 @@ dependencies = [
 [[package]]
 name = "librespot-connect"
 version = "0.6.0-dev"
-source = "git+https://github.com/KUHLwasStolen/librespot.git?branch=lookup-cdn#dc88d85652f4746b9e4ef4aad59e6004e2294e81"
+source = "git+https://github.com/KUHLwasStolen/librespot.git?branch=lookup-cdn-simple#fa7fe9df8ae975b0cdc382764a95dae5e2f453f5"
 dependencies = [
  "futures-util",
  "librespot-core",
@@ -2880,13 +2892,14 @@ dependencies = [
 [[package]]
 name = "librespot-core"
 version = "0.6.0-dev"
-source = "git+https://github.com/KUHLwasStolen/librespot.git?branch=lookup-cdn#dc88d85652f4746b9e4ef4aad59e6004e2294e81"
+source = "git+https://github.com/KUHLwasStolen/librespot.git?branch=lookup-cdn-simple#fa7fe9df8ae975b0cdc382764a95dae5e2f453f5"
 dependencies = [
  "aes",
  "base64 0.22.1",
  "byteorder",
  "bytes",
  "data-encoding",
+ "dns-lookup",
  "flate2",
  "form_urlencoded",
  "futures-core",
@@ -2937,7 +2950,7 @@ dependencies = [
 [[package]]
 name = "librespot-metadata"
 version = "0.6.0-dev"
-source = "git+https://github.com/KUHLwasStolen/librespot.git?branch=lookup-cdn#dc88d85652f4746b9e4ef4aad59e6004e2294e81"
+source = "git+https://github.com/KUHLwasStolen/librespot.git?branch=lookup-cdn-simple#fa7fe9df8ae975b0cdc382764a95dae5e2f453f5"
 dependencies = [
  "async-trait",
  "bytes",
@@ -2954,7 +2967,7 @@ dependencies = [
 [[package]]
 name = "librespot-oauth"
 version = "0.6.0-dev"
-source = "git+https://github.com/KUHLwasStolen/librespot.git?branch=lookup-cdn#dc88d85652f4746b9e4ef4aad59e6004e2294e81"
+source = "git+https://github.com/KUHLwasStolen/librespot.git?branch=lookup-cdn-simple#fa7fe9df8ae975b0cdc382764a95dae5e2f453f5"
 dependencies = [
  "log",
  "oauth2",
@@ -2966,7 +2979,7 @@ dependencies = [
 [[package]]
 name = "librespot-playback"
 version = "0.6.0-dev"
-source = "git+https://github.com/KUHLwasStolen/librespot.git?branch=lookup-cdn#dc88d85652f4746b9e4ef4aad59e6004e2294e81"
+source = "git+https://github.com/KUHLwasStolen/librespot.git?branch=lookup-cdn-simple#fa7fe9df8ae975b0cdc382764a95dae5e2f453f5"
 dependencies = [
  "alsa",
  "cpal",
@@ -2998,7 +3011,7 @@ dependencies = [
 [[package]]
 name = "librespot-protocol"
 version = "0.6.0-dev"
-source = "git+https://github.com/KUHLwasStolen/librespot.git?branch=lookup-cdn#dc88d85652f4746b9e4ef4aad59e6004e2294e81"
+source = "git+https://github.com/KUHLwasStolen/librespot.git?branch=lookup-cdn-simple#fa7fe9df8ae975b0cdc382764a95dae5e2f453f5"
 dependencies = [
  "protobuf",
  "protobuf-codegen",
