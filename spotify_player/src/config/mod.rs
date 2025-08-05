@@ -89,6 +89,8 @@ pub struct AppConfig {
 
     pub layout: LayoutConfig,
 
+    pub genre_num: u8,
+
     #[cfg(feature = "image")]
     pub cover_img_length: usize,
     #[cfg(feature = "image")]
@@ -269,7 +271,7 @@ impl Default for AppConfig {
             tracks_playback_limit: 50,
 
             playback_format: String::from(
-                "{status} {track} • {artists} {liked}\n{album}\n{metadata}",
+                "{status} {track} • {artists} {liked}\n{album} • {genres}\n{metadata}",
             ),
             playback_metadata_fields: vec![
                 "repeat".to_string(),
@@ -302,6 +304,8 @@ impl Default for AppConfig {
             progress_bar_type: ProgressBarType::Rectangle,
 
             layout: LayoutConfig::default(),
+
+            genre_num: 2,
 
             #[cfg(feature = "image")]
             cover_img_length: 9,
