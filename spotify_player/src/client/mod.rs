@@ -1,6 +1,7 @@
 use std::ops::Deref;
 use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
+use crate::local::LocalEntries;
 use crate::state::Lyrics;
 use crate::{auth, config};
 use crate::{
@@ -18,6 +19,8 @@ use std::io::Write;
 
 use anyhow::Context as _;
 use anyhow::Result;
+
+use awedio::Sound;
 
 #[cfg(feature = "streaming")]
 use parking_lot::Mutex;
@@ -909,10 +912,23 @@ impl Client {
             Playback::URIs(ids, offset) => {
                 self.start_uris_playback(ids, device_id, offset, None)
                     .await?;
-            }
+            },
+            Playback::LocalPlayback(entries) => {
+                self.start_local_playback(entries);
+            },
         }
 
         Ok(())
+    }
+
+    fn start_local_playback(&self, entries: LocalEntries) {
+        if let Ok((mut manager, _backend)) = awedio::start() {
+            if let Ok(sound) = awedio::sounds::open_file(entries.entries()[0].full_path()) {
+                let (sound, notifier) = sound.with_completion_notifier();
+                manager.play(Box::new(sound));
+                let _ = notifier.recv();
+            }
+        }
     }
 
     /// Get recommendation (radio) tracks based on a seed

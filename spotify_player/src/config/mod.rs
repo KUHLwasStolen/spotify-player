@@ -119,6 +119,8 @@ pub struct AppConfig {
     pub seek_duration_secs: u16,
 
     pub sort_artist_albums_by_type: bool,
+
+    pub local_library_root: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -341,6 +343,8 @@ impl Default for AppConfig {
             seek_duration_secs: 5,
 
             sort_artist_albums_by_type: false,
+
+            local_library_root: ".".to_string(),
         }
     }
 }

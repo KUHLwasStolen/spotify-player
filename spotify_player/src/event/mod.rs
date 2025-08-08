@@ -9,10 +9,10 @@ use crate::{
     state::{
         ActionListItem, Album, AlbumId, Artist, ArtistFocusState, ArtistId, ArtistPopupAction,
         BrowsePageUIState, Context, ContextId, ContextPageType, ContextPageUIState, DataReadGuard,
-        Focusable, Id, Item, ItemId, LibraryFocusState, LibraryPageUIState, PageState, PageType,
-        PlayableId, Playback, PlaylistCreateCurrentField, PlaylistFolderItem, PlaylistId,
-        PlaylistPopupAction, PopupState, SearchFocusState, SearchPageUIState, SharedState, ShowId,
-        Track, TrackId, TrackOrder, UIStateGuard, USER_LIKED_TRACKS_ID,
+        Focusable, Id, Item, ItemId, LibraryFocusState, LibraryPageUIState, LocalPageUIState,
+        PageState, PageType, PlayableId, Playback, PlaylistCreateCurrentField, PlaylistFolderItem,
+        PlaylistId, PlaylistPopupAction, PopupState, SearchFocusState, SearchPageUIState,
+        SharedState, ShowId, Track, TrackId, TrackOrder, UIStateGuard, USER_LIKED_TRACKS_ID,
         USER_RECENTLY_PLAYED_TRACKS_ID, USER_TOP_TRACKS_ID,
     },
     ui::{single_line_input::LineInput, Orientation},
@@ -775,6 +775,17 @@ fn handle_global_command(
                     })?;
                 }
             }
+        }
+        Command::LocalPage => {
+            let default_path = config::get_config().app_config.local_library_root.clone();
+            let entries = crate::ui::utils::get_local_entries(std::path::Path::new(&default_path));
+            ui.new_page(PageState::Local {
+                state: LocalPageUIState {
+                    file_list: ListState::default(),
+                },
+                current_dir: default_path,
+                entries,
+            });
         }
         Command::SwitchDevice => {
             ui.popup = Some(PopupState::DeviceList(ListState::default()));

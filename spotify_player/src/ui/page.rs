@@ -805,6 +805,56 @@ pub fn render_queue_page(
     frame.render_widget(queue_table, rect);
 }
 
+pub fn render_local_page(
+    is_active: bool,
+    frame: &mut Frame,
+    _state: &SharedState,
+    ui: &mut UIStateGuard,
+    rect: Rect,
+) {
+    // 1. Get data
+    let (current_path, entries) = match ui.current_page() {
+        PageState::Local {
+            current_dir,
+            entries,
+            ..
+        } => (std::path::Path::new(current_dir), entries),
+        _ => return,
+    };
+
+    let current_dir = match current_path.file_name() {
+        Some(name) => name.display().to_string(),
+        None => "-".to_string(),
+    };
+    let title = format!("Local library: {current_dir}");
+
+    let list_elements = entries
+        .entries()
+        .iter()
+        .map(|entry| {
+            let symbol = match entry {
+                crate::local::LocalEntry::Directory { .. } => "⎆",
+                crate::local::LocalEntry::Playable { .. } => "▶",
+            };
+
+            (format!("{} {}", symbol, entry.name()), entry.selected())
+        })
+        .collect();
+
+    // 2. Construct the page's layout
+    let rect = construct_and_render_block(&title, &ui.theme, Borders::ALL, frame, rect);
+
+    // 3. Construct the page's widget
+    let (file_list, len) = utils::construct_list_widget(&ui.theme, list_elements, is_active);
+
+    // 4. Render page's widget
+    let Some(MutableWindowState::List(list_state)) = ui.current_page_mut().focus_window_state_mut()
+    else {
+        return;
+    };
+    utils::render_list_window(frame, file_list, rect, len, list_state);
+}
+
 /// Render windows for an artist context page, which includes
 /// - A top track table
 /// - An album table

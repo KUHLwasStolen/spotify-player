@@ -5,6 +5,7 @@ mod command;
 mod config;
 mod event;
 mod key;
+mod local;
 #[cfg(feature = "media-control")]
 mod media_control;
 mod playlist_folders;

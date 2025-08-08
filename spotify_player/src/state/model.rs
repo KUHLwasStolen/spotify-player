@@ -1,3 +1,4 @@
+use crate::local::LocalEntries;
 use crate::ui::utils::to_bidi_string;
 use crate::utils::map_join;
 use html_escape::decode_html_entities;
@@ -61,15 +62,17 @@ pub enum ContextId {
 }
 
 /// Data used to start a new playback.
-/// There are two ways to start a new playback:
+/// There are three ways to start a new playback:
 /// - Specify the playing context ID with an offset
 /// - Specify the list of track IDs with an offset
+/// - Specify the list of local files to play
 ///
 /// An offset can be either a track's URI or its absolute offset in the context
 #[derive(Clone, Debug)]
 pub enum Playback {
     Context(ContextId, Option<rspotify::model::Offset>),
     URIs(Vec<PlayableId<'static>>, Option<rspotify::model::Offset>),
+    LocalPlayback(LocalEntries),
 }
 
 #[derive(Default, Clone, Debug, Deserialize, Serialize)]
@@ -721,6 +724,7 @@ impl Playback {
 
                 Playback::URIs(ids, Some(rspotify::model::Offset::Uri(uri)))
             }
+            Playback::LocalPlayback(..) => self.clone(),
         }
     }
 }
