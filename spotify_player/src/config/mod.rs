@@ -207,6 +207,7 @@ pub struct LibraryLayoutConfig {
     pub album_percent: u16,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 #[serde(from = "StreamingTypeOrBool")]
 pub enum StreamingType {
@@ -224,6 +225,7 @@ enum RawStreamingType {
     Never,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum StreamingTypeOrBool {
