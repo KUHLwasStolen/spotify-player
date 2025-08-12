@@ -21,11 +21,15 @@ use anyhow::Context as _;
 use anyhow::Result;
 
 use awedio::Sound;
+use tokio::task::JoinHandle;
+
+use std::sync::Mutex as SMutex;
 
 #[cfg(feature = "streaming")]
 use parking_lot::Mutex;
 
 use reqwest::StatusCode;
+use rspotify::model::CurrentPlaybackContext;
 use rspotify::{http::Query, prelude::*};
 
 mod handlers;
@@ -42,6 +46,15 @@ const PLAYBACK_TYPES: [&rspotify::model::AdditionalType; 2] = [
     &rspotify::model::AdditionalType::Episode,
 ];
 
+#[derive(Clone)]
+pub enum ClientMode {
+    Local {
+        queue: LocalEntries,
+        current: Arc<SMutex<JoinHandle<()>>>,
+    },
+    Online,
+}
+
 /// The application's Spotify client
 #[derive(Clone)]
 pub struct Client {
@@ -50,6 +63,7 @@ pub struct Client {
     auth_config: AuthConfig,
     #[cfg(feature = "streaming")]
     stream_conn: Arc<Mutex<Option<librespot_connect::spirc::Spirc>>>,
+    mode: ClientMode,
 }
 
 impl Deref for Client {
@@ -73,6 +87,7 @@ impl Client {
 
             #[cfg(feature = "streaming")]
             stream_conn: Arc::new(Mutex::new(None)),
+            mode: ClientMode::Online,
         }
     }
 
@@ -202,7 +217,7 @@ impl Client {
 
     /// Handle a player request, return a new playback metadata on success
     pub async fn handle_player_request(
-        &self,
+        &mut self,
         request: PlayerRequest,
         mut playback: Option<PlaybackMetadata>,
     ) -> Result<Option<PlaybackMetadata>> {
@@ -311,7 +326,7 @@ impl Client {
 
     /// Handle a client request
     pub(crate) async fn handle_request(
-        &self,
+        &mut self,
         state: &SharedState,
         request: ClientRequest,
     ) -> Result<()> {
@@ -886,7 +901,7 @@ impl Client {
     }
 
     /// Start a playback
-    async fn start_playback(&self, playback: Playback, device_id: Option<&str>) -> Result<()> {
+    async fn start_playback(&mut self, playback: Playback, device_id: Option<&str>) -> Result<()> {
         match playback {
             Playback::Context(id, offset) => match id {
                 ContextId::Album(id) => {
@@ -921,13 +936,25 @@ impl Client {
         Ok(())
     }
 
-    fn start_local_playback(&self, entries: LocalEntries) {
+    fn start_local_playback(&mut self, entries: LocalEntries) {
         if let Ok((mut manager, _backend)) = awedio::start() {
-            if let Ok(sound) = awedio::sounds::open_file(entries.entries()[0].full_path()) {
-                let (sound, notifier) = sound.with_completion_notifier();
-                manager.play(Box::new(sound));
-                let _ = notifier.recv();
+            if let ClientMode::Local { current, .. } = &mut self.mode {
+                current.lock().unwrap().abort();
             }
+
+            let entries_clone = entries.clone();
+
+            let current = tokio::spawn(async move {
+                if let Ok(sound) = awedio::sounds::open_file(entries.entries()[0].full_path()) {
+                    let (sound, _controller) = sound.pausable().stoppable().controllable();
+                    let (sound, notifier) = sound.with_completion_notifier();
+
+                    manager.play(Box::new(sound));
+                    notifier.recv().unwrap();
+                }
+            });
+
+            self.mode = ClientMode::Local { queue: entries_clone, current: Arc::new(SMutex::new(current)) };
         }
     }
 
@@ -1566,64 +1593,94 @@ impl Client {
         state: &SharedState,
         reset_buffered_playback: bool,
     ) -> Result<()> {
-        let new_playback = {
-            // update the playback state
-            let playback = self.current_playback2().await?;
-            let mut player = state.player.write();
+        match self.mode {
+            ClientMode::Online => {
+                let new_playback = {
+                    // update the playback state
+                    let playback = self.current_playback2().await?;
+                    let mut player = state.player.write();
 
-            let prev_item = player.currently_playing();
+                    let prev_item = player.currently_playing();
 
-            let prev_name = match prev_item {
-                Some(rspotify::model::PlayableItem::Track(track)) => track.name.clone(),
-                Some(rspotify::model::PlayableItem::Episode(episode)) => episode.name.clone(),
-                None => String::new(),
-            };
+                    let prev_name = match prev_item {
+                        Some(rspotify::model::PlayableItem::Track(track)) => track.name.clone(),
+                        Some(rspotify::model::PlayableItem::Episode(episode)) => episode.name.clone(),
+                        None => String::new(),
+                    };
 
-            player.playback = playback;
-            player.playback_last_updated_time = Some(std::time::Instant::now());
+                    player.playback = playback;
+                    player.playback_last_updated_time = Some(std::time::Instant::now());
 
-            let curr_item = player.currently_playing();
+                    let curr_item = player.currently_playing();
 
-            let curr_name = match curr_item {
-                Some(rspotify::model::PlayableItem::Track(track)) => track.name.clone(),
-                Some(rspotify::model::PlayableItem::Episode(episode)) => episode.name.clone(),
-                None => String::new(),
-            };
+                    let curr_name = match curr_item {
+                        Some(rspotify::model::PlayableItem::Track(track)) => track.name.clone(),
+                        Some(rspotify::model::PlayableItem::Episode(episode)) => episode.name.clone(),
+                        None => String::new(),
+                    };
 
-            let new_playback = prev_name != curr_name && !curr_name.is_empty();
-            // check if we need to update the buffered playback
-            let needs_update = match (&player.buffered_playback, &player.playback) {
-                (Some(bp), Some(p)) => bp.device_id != p.device.id || new_playback,
-                (None, None) => false,
-                _ => true,
-            };
+                    let new_playback = prev_name != curr_name && !curr_name.is_empty();
+                    // check if we need to update the buffered playback
+                    let needs_update = match (&player.buffered_playback, &player.playback) {
+                        (Some(bp), Some(p)) => bp.device_id != p.device.id || new_playback,
+                        (None, None) => false,
+                        _ => true,
+                    };
 
-            if reset_buffered_playback || needs_update {
-                player.buffered_playback = player.playback.as_ref().map(|p| {
-                    let mut playback = PlaybackMetadata::from_playback(p);
+                    if reset_buffered_playback || needs_update {
+                        player.buffered_playback = player.playback.as_ref().map(|p| {
+                            let mut playback = PlaybackMetadata::from_playback(p);
 
-                    // handle additional data from the previous buffered state
-                    // that is not available in a standard Spotify playback's state
-                    if let Some(bp) = &player.buffered_playback {
-                        if let Some(volume) = bp.mute_state {
-                            playback.volume = Some(volume);
-                        }
-                        playback.mute_state = bp.mute_state;
-                        playback.fake_track_repeat_state = bp.fake_track_repeat_state;
+                            // handle additional data from the previous buffered state
+                            // that is not available in a standard Spotify playback's state
+                            if let Some(bp) = &player.buffered_playback {
+                                if let Some(volume) = bp.mute_state {
+                                    playback.volume = Some(volume);
+                                }
+                                playback.mute_state = bp.mute_state;
+                                playback.fake_track_repeat_state = bp.fake_track_repeat_state;
+                            }
+                            playback
+                        });
                     }
-                    playback
-                });
+
+                    new_playback
+                };
+
+                if !new_playback {
+                    return Ok(());
+                }
+                self.handle_new_playback_event(state).await?;
+
+                Ok(())
             }
+            ClientMode::Local { .. } => {
+                let mut player = state.player.write();
 
-            new_playback
-        };
+                player.playback = Some(CurrentPlaybackContext {
+                    device: rspotify::model::Device {
+                        id: None,
+                        is_active: true,
+                        is_private_session: true,
+                        is_restricted: false,
+                        name: "Local Player".to_string(),
+                        _type: rspotify::model::DeviceType::Speaker,
+                        volume_percent: Some(100),
+                    },
+                    repeat_state: rspotify::model::RepeatState::Off,
+                    shuffle_state: false,
+                    context: None,
+                    timestamp: chrono::DateTime::default(),
+                    progress: None,
+                    is_playing: true,
+                    item: None,
+                    currently_playing_type: rspotify::model::CurrentlyPlayingType::Track,
+                    actions: rspotify::model::Actions::default(),
+                });
 
-        if !new_playback {
-            return Ok(());
+                Ok(())
+            }
         }
-        self.handle_new_playback_event(state).await?;
-
-        Ok(())
     }
 
     // Handle new track event

@@ -29,7 +29,7 @@ pub async fn start_client_handler(
         }
 
         let state = state.clone();
-        let client = client.clone();
+        let mut client = client.clone();
         let span = tracing::info_span!("client_request", request = ?request);
 
         tokio::task::spawn(

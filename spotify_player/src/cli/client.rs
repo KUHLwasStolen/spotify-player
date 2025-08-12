@@ -27,7 +27,7 @@ use super::{
     Serialize, MAX_REQUEST_SIZE,
 };
 
-pub async fn start_socket(client: Client, socket: UdpSocket, state: Option<SharedState>) {
+pub async fn start_socket(mut client: Client, socket: UdpSocket, state: Option<SharedState>) {
     let mut buf = [0; MAX_REQUEST_SIZE];
 
     loop {
@@ -53,7 +53,7 @@ pub async fn start_socket(client: Client, socket: UdpSocket, state: Option<Share
 
                 async {
                     let response =
-                        match handle_socket_request(&client, state.as_ref(), request).await {
+                        match handle_socket_request(&mut client, state.as_ref(), request).await {
                             Err(err) => {
                                 tracing::error!("Failed to handle socket request: {err:#}");
                                 let msg = format!("Bad request: {err:#}");
@@ -106,7 +106,7 @@ async fn current_playback(
 }
 
 async fn handle_socket_request(
-    client: &Client,
+    client: &mut Client,
     state: Option<&SharedState>,
     request: super::Request,
 ) -> Result<Vec<u8>> {
@@ -324,7 +324,7 @@ async fn handle_search_request(client: &Client, query: String) -> Result<Vec<u8>
 }
 
 async fn handle_playback_request(
-    client: &Client,
+    client: &mut Client,
     state: Option<&SharedState>,
     command: Command,
 ) -> Result<()> {
@@ -439,7 +439,7 @@ async fn handle_playback_request(
         // To reduce the latency of the CLI command, the player request is handled asynchronously
         // knowing that the application will outlive the asynchronous task.
         tokio::task::spawn({
-            let client = client.clone();
+            let mut client = client.clone();
             let state = state.clone();
             async move {
                 match client.handle_player_request(player_request, playback).await {
