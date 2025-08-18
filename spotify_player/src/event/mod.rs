@@ -778,7 +778,8 @@ fn handle_global_command(
         }
         Command::LocalPage => {
             let default_path = config::get_config().app_config.local_library_root.clone();
-            let entries = crate::ui::utils::get_local_entries(std::path::Path::new(&default_path));
+            let entries =
+                crate::local::utils::get_local_entries(std::path::Path::new(&default_path));
             ui.new_page(PageState::Local {
                 state: LocalPageUIState {
                     file_list: ListState::default(),

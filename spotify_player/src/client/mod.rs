@@ -1,4 +1,6 @@
+use std::fs::File;
 use std::ops::Deref;
+use std::time::Duration;
 use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 use crate::local::LocalEntries;
@@ -20,15 +22,12 @@ use std::io::Write;
 use anyhow::Context as _;
 use anyhow::Result;
 
-use awedio::Sound;
-use tokio::task::JoinHandle;
-
-use std::sync::Mutex as SMutex;
-
+use chrono::TimeDelta;
 #[cfg(feature = "streaming")]
 use parking_lot::Mutex;
 
 use reqwest::StatusCode;
+use rodio::Source;
 use rspotify::model::CurrentPlaybackContext;
 use rspotify::{http::Query, prelude::*};
 
@@ -48,10 +47,7 @@ const PLAYBACK_TYPES: [&rspotify::model::AdditionalType; 2] = [
 
 #[derive(Clone)]
 pub enum ClientMode {
-    Local {
-        queue: LocalEntries,
-        current: Arc<SMutex<JoinHandle<()>>>,
-    },
+    Local { queue: LocalEntries },
     Online,
 }
 
@@ -63,7 +59,9 @@ pub struct Client {
     auth_config: AuthConfig,
     #[cfg(feature = "streaming")]
     stream_conn: Arc<Mutex<Option<librespot_connect::spirc::Spirc>>>,
-    mode: ClientMode,
+    mode: Arc<tokio::sync::Mutex<ClientMode>>,
+    local_stream_handle: Arc<tokio::sync::Mutex<rodio::OutputStream>>,
+    current_local_sink: Arc<tokio::sync::Mutex<Option<rodio::Sink>>>,
 }
 
 impl Deref for Client {
@@ -79,7 +77,11 @@ fn market_query() -> Query<'static> {
 
 impl Client {
     /// Construct a new client
-    pub fn new(auth_config: AuthConfig) -> Self {
+    pub fn new(
+        auth_config: AuthConfig,
+        local_stream_handle: Arc<tokio::sync::Mutex<rodio::OutputStream>>,
+        local_sink: Arc<tokio::sync::Mutex<Option<rodio::Sink>>>,
+    ) -> Self {
         Self {
             spotify: Arc::new(spotify::Spotify::new()),
             http: reqwest::Client::new(),
@@ -87,7 +89,10 @@ impl Client {
 
             #[cfg(feature = "streaming")]
             stream_conn: Arc::new(Mutex::new(None)),
-            mode: ClientMode::Online,
+
+            mode: Arc::new(tokio::sync::Mutex::new(ClientMode::Online)),
+            local_stream_handle: local_stream_handle,
+            current_local_sink: local_sink,
         }
     }
 
@@ -236,7 +241,11 @@ impl Client {
                     playback.shuffle_state = shuffle;
                 }
                 let device_id = playback.as_ref().and_then(|p| p.device_id.as_deref());
-                self.start_playback(p, device_id).await?;
+                self.start_playback(p.clone(), device_id).await?;
+                // return early if started playback is local
+                if let Playback::LocalPlayback(..) = p {
+                    return Ok(None);
+                }
                 // For some reasons, when starting a new playback, the integrated `spotify_player`
                 // client doesn't respect the initial shuffle state, so we need to manually update the state
                 if let Some(ref playback) = playback {
@@ -250,27 +259,71 @@ impl Client {
         let mut playback = playback.context("no playback found")?;
         let device_id = playback.device_id.as_deref();
 
+        let mode_lock = self.mode.lock().await;
+        let mode = mode_lock.clone();
+        drop(mode_lock);
+
         match request {
-            PlayerRequest::NextTrack => self.next_track(device_id).await?,
+            PlayerRequest::NextTrack => match mode {
+                ClientMode::Online => self.next_track(device_id).await?,
+                ClientMode::Local { .. } => {
+                    let sink = self.current_local_sink.lock().await;
+                    if let Some(sink) = &(*sink) {
+                        sink.skip_one();
+                    }
+                }
+            },
             PlayerRequest::PreviousTrack => self.previous_track(device_id).await?,
             PlayerRequest::Resume => {
                 if !playback.is_playing {
-                    self.resume_playback(device_id, None).await?;
+                    match mode {
+                        ClientMode::Online => self.resume_playback(device_id, None).await?,
+                        ClientMode::Local { .. } => {
+                            let sink = self.current_local_sink.lock().await;
+                            if let Some(sink) = &(*sink) {
+                                sink.play();
+                            }
+                        }
+                    };
                     playback.is_playing = true;
                 }
             }
 
             PlayerRequest::Pause => {
                 if playback.is_playing {
-                    self.pause_playback(device_id).await?;
+                    match mode {
+                        ClientMode::Online => self.pause_playback(device_id).await?,
+                        ClientMode::Local { .. } => {
+                            let sink = self.current_local_sink.lock().await;
+                            if let Some(sink) = &(*sink) {
+                                sink.pause();
+                            }
+                        }
+                    };
                     playback.is_playing = false;
                 }
             }
             PlayerRequest::ResumePause => {
                 if playback.is_playing {
-                    self.pause_playback(device_id).await?;
+                    match mode {
+                        ClientMode::Online => self.pause_playback(device_id).await?,
+                        ClientMode::Local { .. } => {
+                            let sink = self.current_local_sink.lock().await;
+                            if let Some(sink) = &(*sink) {
+                                sink.pause();
+                            }
+                        }
+                    };
                 } else {
-                    self.resume_playback(device_id, None).await?;
+                    match mode {
+                        ClientMode::Online => self.resume_playback(device_id, None).await?,
+                        ClientMode::Local { .. } => {
+                            let sink = self.current_local_sink.lock().await;
+                            if let Some(sink) = &(*sink) {
+                                sink.play();
+                            }
+                        }
+                    };
                 }
                 playback.is_playing = !playback.is_playing;
             }
@@ -651,16 +704,25 @@ impl Client {
 
     pub fn update_playback(&self, state: &SharedState) {
         // After handling a request changing the player's playback,
-        // update the playback state by making multiple get-playback requests.
+        // update the playback state by making multiple get-playback requests
+        // or only one in the case of local mode.
         //
         // Q: Why do we need more than one request to update the playback?
         // A: It might take a while for Spotify server to reflect the new change,
         // making additional requests can help ensure that the playback state is always up-to-date.
         let client = self.clone();
         let state = state.clone();
+        let mode_lock = self.mode.clone();
+
         tokio::task::spawn(async move {
-            let delay = std::time::Duration::from_secs(1);
-            for _ in 0..5 {
+            let mode = mode_lock.lock().await;
+            let (attempts, delay) = match *mode {
+                ClientMode::Online => (5u8, std::time::Duration::from_secs(1)),
+                ClientMode::Local { .. } => (1u8, std::time::Duration::from_millis(50)),
+            };
+            drop(mode);
+
+            for _ in 0..attempts {
                 tokio::time::sleep(delay).await;
                 if let Err(err) = client.retrieve_current_playback(&state, false).await {
                     tracing::error!(
@@ -927,35 +989,44 @@ impl Client {
             Playback::URIs(ids, offset) => {
                 self.start_uris_playback(ids, device_id, offset, None)
                     .await?;
-            },
+            }
             Playback::LocalPlayback(entries) => {
-                self.start_local_playback(entries);
-            },
+                self.start_local_playback(entries).await;
+            }
         }
 
         Ok(())
     }
 
-    fn start_local_playback(&mut self, entries: LocalEntries) {
-        if let Ok((mut manager, _backend)) = awedio::start() {
-            if let ClientMode::Local { current, .. } = &mut self.mode {
-                current.lock().unwrap().abort();
-            }
-
-            let entries_clone = entries.clone();
-
-            let current = tokio::spawn(async move {
-                if let Ok(sound) = awedio::sounds::open_file(entries.entries()[0].full_path()) {
-                    let (sound, _controller) = sound.pausable().stoppable().controllable();
-                    let (sound, notifier) = sound.with_completion_notifier();
-
-                    manager.play(Box::new(sound));
-                    notifier.recv().unwrap();
-                }
-            });
-
-            self.mode = ClientMode::Local { queue: entries_clone, current: Arc::new(SMutex::new(current)) };
+    async fn start_local_playback(&mut self, mut entries: LocalEntries) {
+        let mut current_sink = self.current_local_sink.lock().await;
+        if let Some(sink) = &*current_sink {
+            sink.stop();
         }
+
+        let stream_handle = self.local_stream_handle.lock().await;
+        let sink = rodio::Sink::connect_new(&stream_handle.mixer());
+
+        for i in 0..entries.entries().len() {
+            let track = &entries.entries()[i];
+
+            let file = match File::open(track.full_path()) {
+                Ok(file) => file,
+                Err(_) => continue,
+            };
+
+            if let Ok(source) = rodio::Decoder::try_from(file) {
+                if track.duration().is_zero() {
+                    entries.entries_mut()[i].set_duration(source.total_duration());
+                }
+
+                sink.append(source);
+            }
+        }
+
+        *current_sink = Some(sink);
+        let mut mode = self.mode.lock().await;
+        *mode = ClientMode::Local { queue: entries };
     }
 
     /// Get recommendation (radio) tracks based on a seed
@@ -1593,7 +1664,8 @@ impl Client {
         state: &SharedState,
         reset_buffered_playback: bool,
     ) -> Result<()> {
-        match self.mode {
+        let mode = self.mode.lock().await;
+        match &(*mode) {
             ClientMode::Online => {
                 let new_playback = {
                     // update the playback state
@@ -1604,7 +1676,9 @@ impl Client {
 
                     let prev_name = match prev_item {
                         Some(rspotify::model::PlayableItem::Track(track)) => track.name.clone(),
-                        Some(rspotify::model::PlayableItem::Episode(episode)) => episode.name.clone(),
+                        Some(rspotify::model::PlayableItem::Episode(episode)) => {
+                            episode.name.clone()
+                        }
                         None => String::new(),
                     };
 
@@ -1615,7 +1689,9 @@ impl Client {
 
                     let curr_name = match curr_item {
                         Some(rspotify::model::PlayableItem::Track(track)) => track.name.clone(),
-                        Some(rspotify::model::PlayableItem::Episode(episode)) => episode.name.clone(),
+                        Some(rspotify::model::PlayableItem::Episode(episode)) => {
+                            episode.name.clone()
+                        }
                         None => String::new(),
                     };
 
@@ -1654,28 +1730,108 @@ impl Client {
 
                 Ok(())
             }
-            ClientMode::Local { .. } => {
+            ClientMode::Local { queue } => {
+                let sink = self.current_local_sink.lock().await;
+                let (index, position, is_playing) = match &(*sink) {
+                    Some(sink) => {
+                        let index = queue.entries().len() - sink.len();
+                        (
+                            index,
+                            sink.get_pos(),
+                            !(sink.is_paused() || index >= queue.entries().len()),
+                        )
+                    }
+                    None => (0, Duration::from_secs(0), false),
+                };
+                drop(sink);
+
                 let mut player = state.player.write();
 
-                player.playback = Some(CurrentPlaybackContext {
-                    device: rspotify::model::Device {
-                        id: None,
-                        is_active: true,
-                        is_private_session: true,
-                        is_restricted: false,
-                        name: "Local Player".to_string(),
-                        _type: rspotify::model::DeviceType::Speaker,
-                        volume_percent: Some(100),
-                    },
-                    repeat_state: rspotify::model::RepeatState::Off,
-                    shuffle_state: false,
-                    context: None,
-                    timestamp: chrono::DateTime::default(),
-                    progress: None,
-                    is_playing: true,
-                    item: None,
-                    currently_playing_type: rspotify::model::CurrentlyPlayingType::Track,
-                    actions: rspotify::model::Actions::default(),
+                // all tracks have been played and the sink length has flipped over to 0
+                if index >= queue.entries().len() {
+                    player.playback = None;
+                } else {
+                    player.playback = Some(CurrentPlaybackContext {
+                        device: rspotify::model::Device {
+                            id: None,
+                            is_active: true,
+                            is_private_session: true,
+                            is_restricted: false,
+                            name: "Local Player".to_string(),
+                            _type: rspotify::model::DeviceType::Computer,
+                            volume_percent: Some(100),
+                        },
+                        repeat_state: rspotify::model::RepeatState::Off,
+                        shuffle_state: false,
+                        context: None,
+                        timestamp: chrono::DateTime::default(),
+                        progress: Some(TimeDelta::from_std(position).unwrap_or_default()),
+                        is_playing: is_playing,
+                        item: Some(rspotify::model::PlayableItem::Track(
+                            rspotify::model::FullTrack {
+                                album: rspotify::model::SimplifiedAlbum {
+                                    album_group: None,
+                                    album_type: None,
+                                    artists: Vec::new(),
+                                    available_markets: Vec::new(),
+                                    external_urls: HashMap::new(),
+                                    href: None,
+                                    id: None,
+                                    images: Vec::new(),
+                                    name: queue.entries()[index].album(),
+                                    release_date: None,
+                                    release_date_precision: None,
+                                    restrictions: None,
+                                },
+                                artists: queue.entries()[index]
+                                    .artists()
+                                    .iter()
+                                    .map(|a| rspotify::model::SimplifiedArtist {
+                                        external_urls: HashMap::new(),
+                                        href: None,
+                                        id: None,
+                                        name: a.to_string(),
+                                    })
+                                    .collect(),
+                                available_markets: Vec::new(),
+                                disc_number: 0,
+                                duration: TimeDelta::from_std(queue.entries()[index].duration())
+                                    .unwrap_or(TimeDelta::zero()),
+                                explicit: false,
+                                external_ids: HashMap::new(),
+                                external_urls: HashMap::new(),
+                                href: None,
+                                id: None,
+                                is_local: true,
+                                is_playable: Some(true),
+                                linked_from: None,
+                                restrictions: None,
+                                name: queue.entries()[index].name(),
+                                popularity: 0,
+                                preview_url: None,
+                                track_number: 0,
+                            },
+                        )),
+                        currently_playing_type: rspotify::model::CurrentlyPlayingType::Track,
+                        actions: rspotify::model::Actions::default(),
+                    });
+                }
+
+                player.playback_last_updated_time = Some(std::time::Instant::now());
+
+                player.buffered_playback = player.playback.as_ref().map(|p| {
+                    let mut playback = PlaybackMetadata::from_playback(p);
+
+                    // handle additional data from the previous buffered state
+                    // that is not available in a standard Spotify playback's state
+                    if let Some(bp) = &player.buffered_playback {
+                        if let Some(volume) = bp.mute_state {
+                            playback.volume = Some(volume);
+                        }
+                        playback.mute_state = bp.mute_state;
+                        playback.fake_track_repeat_state = bp.fake_track_repeat_state;
+                    }
+                    playback
                 });
 
                 Ok(())

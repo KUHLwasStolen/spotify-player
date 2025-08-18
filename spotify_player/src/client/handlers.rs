@@ -49,21 +49,25 @@ fn handle_playback_change_event(
     handler_state: &mut PlayerEventHandlerState,
 ) -> anyhow::Result<()> {
     let player = state.player.read();
-    let (playback, id, name, duration) = match (
+
+    let (playback, id, name, duration, is_local) = match (
         player.buffered_playback.as_ref(),
         player.currently_playing(),
     ) {
-        (Some(playback), Some(rspotify::model::PlayableItem::Track(track))) => (
-            playback,
-            PlayableId::Track(track.id.clone().expect("null track_id")),
-            &track.name,
-            track.duration,
-        ),
+        (Some(playback), Some(rspotify::model::PlayableItem::Track(track))) => {
+            let id = match &track.id {
+                Some(id) => Some(PlayableId::Track(id.clone())),
+                None => None,
+            };
+
+            (playback, id, &track.name, track.duration, track.is_local)
+        }
         (Some(playback), Some(rspotify::model::PlayableItem::Episode(episode))) => (
             playback,
-            PlayableId::Episode(episode.id.clone()),
+            Some(PlayableId::Episode(episode.id.clone())),
             &episode.name,
             episode.duration,
+            false,
         ),
         _ => return Ok(()),
     };
@@ -75,10 +79,15 @@ fn handle_playback_change_event(
         }
     }
 
+    // return early when in local playback mode
+    if is_local && id.is_none() {
+        return Ok(());
+    }
+
     if let Some(queue) = player.queue.as_ref() {
         // queue needs to be updated if its playing track is different from actual playback's playing track
         if let Some(queue_track) = queue.currently_playing.as_ref() {
-            if queue_track.id().expect("null track_id") != id {
+            if queue_track.id().expect("null track_id") != *id.as_ref().expect("null track_id") {
                 client_pub.send(ClientRequest::GetCurrentUserQueue)?;
             }
         }
@@ -100,7 +109,9 @@ fn handle_playback_change_event(
                     "fake track repeat mode is enabled, add the current track ({}) to queue",
                     name
                 );
-                client_pub.send(ClientRequest::AddPlayableToQueue(id))?;
+                client_pub.send(ClientRequest::AddPlayableToQueue(
+                    id.expect("null track_id"),
+                ))?;
                 handler_state.add_track_to_queue_req_timer = std::time::Instant::now();
             }
         }
@@ -186,6 +197,22 @@ fn handle_page_change_event(
                         })?;
                     }
                 }
+            }
+        }
+
+        PageState::Local { entries, .. } => {
+            if let Some(rspotify::model::PlayableItem::Track(current_track)) =
+                state.player.read().currently_playing()
+            {
+                for i in 0..entries.entries().len() {
+                    let entry = &entries.entries()[i];
+                    if entry.name() == current_track.name {
+                        entries.select(i);
+                        break;
+                    }
+                }
+            } else {
+                entries.unselect_all();
             }
         }
         _ => {}

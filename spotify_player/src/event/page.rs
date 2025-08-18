@@ -508,7 +508,11 @@ fn handle_command_for_command_help_page(command: Command, ui: &mut UIStateGuard)
     handle_navigation_command(command, ui.current_page_mut(), scroll_offset, 10000, count)
 }
 
-fn handle_command_for_local_page(command: Command, client_pub: &flume::Sender<ClientRequest>, ui: &mut UIStateGuard) -> bool {
+fn handle_command_for_local_page(
+    command: Command,
+    client_pub: &flume::Sender<ClientRequest>,
+    ui: &mut UIStateGuard,
+) -> bool {
     let PageState::Local {
         state: page_state,
         current_dir,
@@ -544,8 +548,9 @@ fn handle_command_for_local_page(command: Command, client_pub: &flume::Sender<Cl
                         }
 
                         page_state.file_list.select(Some(0));
-                        *entries =
-                            crate::ui::utils::get_local_entries(std::path::Path::new(current_dir));
+                        *entries = crate::local::utils::get_local_entries(std::path::Path::new(
+                            current_dir,
+                        ));
                     }
                     LocalEntry::Playable { .. } => {
                         entries.select(selected);
@@ -556,7 +561,12 @@ fn handle_command_for_local_page(command: Command, client_pub: &flume::Sender<Cl
 
                         let local_playback = Playback::LocalPlayback(LocalEntries::new(to_play));
 
-                        return client_pub.send(ClientRequest::Player(PlayerRequest::StartPlayback(local_playback, None))).is_ok();
+                        return client_pub
+                            .send(ClientRequest::Player(PlayerRequest::StartPlayback(
+                                local_playback,
+                                None,
+                            )))
+                            .is_ok();
                     }
                 }
             }

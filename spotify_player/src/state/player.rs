@@ -1,3 +1,5 @@
+use chrono::TimeDelta;
+
 use super::model::{AlbumId, ArtistId, ContextId, Device, PlaybackMetadata, PlaylistId, ShowId};
 
 /// Player state
@@ -26,8 +28,12 @@ impl PlayerState {
         // update the playback's progress based on the `playback_last_updated_time`
         playback.progress = playback.progress.map(|d| {
             d + if playback.is_playing {
-                chrono::Duration::from_std(self.playback_last_updated_time.unwrap().elapsed())
-                    .unwrap()
+                chrono::Duration::from_std(
+                    self.playback_last_updated_time
+                        .unwrap_or(std::time::Instant::now())
+                        .elapsed(),
+                )
+                .unwrap_or(chrono::Duration::zero())
             } else {
                 chrono::Duration::zero()
             }
@@ -54,10 +60,12 @@ impl PlayerState {
         match self.playback {
             None => None,
             Some(ref playback) => {
-                let progress = playback.progress.unwrap()
+                let progress = playback.progress.unwrap_or(TimeDelta::zero())
                     + if playback.is_playing {
                         chrono::Duration::from_std(
-                            self.playback_last_updated_time.unwrap().elapsed(),
+                            self.playback_last_updated_time
+                                .unwrap_or(std::time::Instant::now())
+                                .elapsed(),
                         )
                         .ok()?
                     } else {
