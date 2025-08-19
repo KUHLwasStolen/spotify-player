@@ -72,7 +72,7 @@ pub enum ContextId {
 pub enum Playback {
     Context(ContextId, Option<rspotify::model::Offset>),
     URIs(Vec<PlayableId<'static>>, Option<rspotify::model::Offset>),
-    LocalPlayback(LocalEntries),
+    Local(LocalEntries),
 }
 
 #[derive(Default, Clone, Debug, Deserialize, Serialize)]
@@ -724,7 +724,7 @@ impl Playback {
 
                 Playback::URIs(ids, Some(rspotify::model::Offset::Uri(uri)))
             }
-            Playback::LocalPlayback(..) => self.clone(),
+            Playback::Local(..) => self.clone(),
         }
     }
 }

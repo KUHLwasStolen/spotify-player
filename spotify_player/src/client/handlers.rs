@@ -55,10 +55,7 @@ fn handle_playback_change_event(
         player.currently_playing(),
     ) {
         (Some(playback), Some(rspotify::model::PlayableItem::Track(track))) => {
-            let id = match &track.id {
-                Some(id) => Some(PlayableId::Track(id.clone())),
-                None => None,
-            };
+            let id = track.id.as_ref().map(|id| PlayableId::Track(id.clone()));
 
             (playback, id, &track.name, track.duration, track.is_local)
         }

@@ -136,8 +136,7 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
     } else {
         let mut ui_lock = state.ui.lock();
         let default_path = configs.app_config.local_library_root.clone();
-        let entries =
-            crate::local::utils::get_local_entries(std::path::Path::new(&default_path));
+        let entries = crate::local::utils::get_local_entries(std::path::Path::new(&default_path));
         ui_lock.new_page(state::PageState::Local {
             state: crate::state::LocalPageUIState {
                 file_list: ratatui::widgets::ListState::default(),

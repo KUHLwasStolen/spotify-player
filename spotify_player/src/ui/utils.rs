@@ -1,5 +1,3 @@
-use crate::local::{LocalEntries, LocalEntry};
-
 use super::{
     config, Block, BorderType, Borders, Frame, List, ListItem, ListState, Rect, Span, Style, Table,
     TableState,

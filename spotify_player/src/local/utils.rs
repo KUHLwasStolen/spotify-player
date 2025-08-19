@@ -52,8 +52,12 @@ pub fn get_local_entries(path: &std::path::Path) -> LocalEntries {
                             }
 
                             if let Some(tag_artists) = tag.artists() {
-                                *artists =
-                                    Some(tag_artists.iter().map(|a| a.to_string()).collect());
+                                *artists = Some(
+                                    tag_artists
+                                        .iter()
+                                        .map(std::string::ToString::to_string)
+                                        .collect(),
+                                );
                             }
 
                             if let Some(tag_duration) = tag.duration() {
@@ -89,9 +93,8 @@ fn is_playable(filename: &str) -> bool {
 
 pub fn add_entry_to_sink(entry: &mut LocalEntry, sink: &Sink) {
     if let LocalEntry::Playable { full_path, .. } = entry {
-        let file = match File::open(full_path) {
-            Ok(file) => file,
-            Err(_) => return,
+        let Ok(file) = File::open(full_path) else {
+            return;
         };
 
         if let Ok(source) = rodio::Decoder::try_from(file) {

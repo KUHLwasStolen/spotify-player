@@ -37,16 +37,17 @@ impl LocalEntry {
             }
             LocalEntry::Playable {
                 full_path, title, ..
-            } => match title {
-                Some(title) => title.to_string(),
-                None => {
+            } => {
+                if let Some(title) = title {
+                    title.to_string()
+                } else {
                     let path = std::path::Path::new(full_path);
                     match path.file_name() {
                         Some(name) => name.display().to_string(),
                         None => path.display().to_string(),
                     }
                 }
-            },
+            }
         }
     }
 
@@ -62,6 +63,8 @@ impl LocalEntry {
         }
     }
 
+    // allow dead code as function might be useful later
+    #[allow(dead_code)]
     pub fn full_path(&self) -> &String {
         match self {
             LocalEntry::Directory { full_path } | LocalEntry::Playable { full_path, .. } => {

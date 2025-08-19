@@ -88,7 +88,7 @@ impl Client {
             stream_conn: Arc::new(Mutex::new(None)),
 
             mode: Arc::new(tokio::sync::Mutex::new(ClientMode::Online)),
-            local_stream_handle: local_stream_handle,
+            local_stream_handle,
             current_local_sink: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
@@ -240,7 +240,7 @@ impl Client {
                 let device_id = playback.as_ref().and_then(|p| p.device_id.as_deref());
                 self.start_playback(p.clone(), device_id).await?;
                 // return early if started playback is local
-                if let Playback::LocalPlayback(..) = p {
+                if let Playback::Local(..) = p {
                     return Ok(None);
                 }
                 // For some reasons, when starting a new playback, the integrated `spotify_player`
@@ -286,7 +286,7 @@ impl Client {
                                     sink.pause();
                                 }
                             }
-                        };
+                        }
                     } else {
                         match mode {
                             ClientMode::Online => self.resume_playback(device_id, None).await?,
@@ -296,7 +296,7 @@ impl Client {
                                     sink.play();
                                 }
                             }
-                        };
+                        }
                     }
                     playback.is_playing = !playback.is_playing;
                 }
@@ -409,7 +409,7 @@ impl Client {
                             playback.mute_state = new_mute_state;
                         }
                         PlayerRequest::Volume(volume) => {
-                            sink.set_volume((volume as f32) / 100f32);
+                            sink.set_volume(f32::from(volume) / 100f32);
 
                             playback.volume = Some(u32::from(volume));
                             playback.mute_state = None;
@@ -650,7 +650,7 @@ impl Client {
                 let mut mode = self.mode.lock().await;
                 match (playable, &mut (*mode)) {
                     (IdOrLocal::Id(playable_id), ClientMode::Online) => {
-                        self.add_item_to_queue(playable_id, None).await?
+                        self.add_item_to_queue(playable_id, None).await?;
                     }
                     (IdOrLocal::Local(mut local_entry), ClientMode::Local { queue }) => {
                         let sink = self.current_local_sink.lock().await;
@@ -665,7 +665,7 @@ impl Client {
                         }
                     }
                     _ => return Err(anyhow::Error::msg("ClientMode and playable type mismatch")),
-                };
+                }
             }
             ClientRequest::AddPlayableToPlaylist(playlist_id, playable_id) => {
                 self.add_item_to_playlist(state, playlist_id, playable_id)
@@ -697,12 +697,8 @@ impl Client {
                     ClientMode::Online => Some(self.current_user_queue().await?),
                     ClientMode::Local { queue } => {
                         let sink = self.current_local_sink.lock().await;
-
-                        if let Some(sink) = &(*sink) {
-                            Some(queue.to_user_queue(queue.entries().len() - sink.len()))
-                        } else {
-                            None
-                        }
+                        sink.as_ref()
+                            .map(|sink| queue.to_user_queue(queue.entries().len() - sink.len()))
                     }
                 };
                 state.player.write().queue = queue;
@@ -1093,7 +1089,7 @@ impl Client {
                             "`StartPlayback` request for `tracks` context is not supported"
                         )
                     }
-                };
+                }
 
                 let mut mode = self.mode.lock().await;
                 *mode = ClientMode::Online;
@@ -1104,7 +1100,7 @@ impl Client {
                 let mut mode = self.mode.lock().await;
                 *mode = ClientMode::Online;
             }
-            Playback::LocalPlayback(entries) => {
+            Playback::Local(entries) => {
                 self.start_local_playback(entries).await;
             }
         }
@@ -1119,7 +1115,7 @@ impl Client {
         }
 
         let stream_handle = self.local_stream_handle.lock().await;
-        let sink = rodio::Sink::connect_new(&stream_handle.mixer());
+        let sink = rodio::Sink::connect_new(stream_handle.mixer());
 
         for i in 0..entries.entries().len() {
             let track = &mut entries.entries_mut()[i];
@@ -1871,7 +1867,7 @@ impl Client {
                         context: None,
                         timestamp: chrono::DateTime::default(),
                         progress: Some(TimeDelta::from_std(position).unwrap_or_default()),
-                        is_playing: is_playing,
+                        is_playing,
                         item: queue.entries()[index].try_to_playable_item(),
                         currently_playing_type: rspotify::model::CurrentlyPlayingType::Track,
                         actions: rspotify::model::Actions::default(),
