@@ -646,8 +646,26 @@ impl Client {
                     );
                 }
             }
-            ClientRequest::AddPlayableToQueue(playable_id) => {
-                self.add_item_to_queue(playable_id, None).await?;
+            ClientRequest::AddPlayableToQueue(playable) => {
+                let mut mode = self.mode.lock().await;
+                match (playable, &mut (*mode)) {
+                    (IdOrLocal::Id(playable_id), ClientMode::Online) => {
+                        self.add_item_to_queue(playable_id, None).await?
+                    }
+                    (IdOrLocal::Local(mut local_entry), ClientMode::Local { queue }) => {
+                        let sink = self.current_local_sink.lock().await;
+                        if let Some(sink) = &(*sink) {
+                            crate::local::utils::add_entry_to_sink(&mut local_entry, sink);
+                            queue.entries_mut().push(local_entry);
+
+                            // if sink existed but was empty refresh playback
+                            if sink.len() == 1 {
+                                self.update_playback(state);
+                            }
+                        }
+                    }
+                    _ => return Err(anyhow::Error::msg("ClientMode and playable type mismatch")),
+                };
             }
             ClientRequest::AddPlayableToPlaylist(playlist_id, playable_id) => {
                 self.add_item_to_playlist(state, playlist_id, playable_id)

@@ -110,7 +110,7 @@ fn handle_playback_change_event(
                     name
                 );
                 client_pub.send(ClientRequest::AddPlayableToQueue(
-                    id.expect("null track_id"),
+                    crate::client::IdOrLocal::Id(id.expect("null track_id")),
                 ))?;
                 handler_state.add_track_to_queue_req_timer = std::time::Instant::now();
             }

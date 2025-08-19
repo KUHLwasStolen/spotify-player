@@ -122,13 +122,30 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
         auth_config,
         Arc::new(tokio::sync::Mutex::new(local_stream_handle)),
     );
-    client
+
+    // if session creation succeeds continue with standard procedure, else enter local mode
+    if client
         .new_session(Some(state), true)
         .await
-        .context("initialize new Spotify session")?;
-
-    // initialize Spotify-related stuff
-    init_spotify(&client_pub, &client, state).context("Failed to initialize the Spotify data")?;
+        .context("initialize new Spotify session")
+        .is_ok()
+    {
+        // initialize Spotify-related stuff
+        init_spotify(&client_pub, &client, state)
+            .context("Failed to initialize the Spotify data")?;
+    } else {
+        let mut ui_lock = state.ui.lock();
+        let default_path = configs.app_config.local_library_root.clone();
+        let entries =
+            crate::local::utils::get_local_entries(std::path::Path::new(&default_path));
+        ui_lock.new_page(state::PageState::Local {
+            state: crate::state::LocalPageUIState {
+                file_list: ratatui::widgets::ListState::default(),
+            },
+            current_dir: default_path,
+            entries,
+        });
+    }
 
     // Spawn application's tasks
     let mut tasks = Vec::new();

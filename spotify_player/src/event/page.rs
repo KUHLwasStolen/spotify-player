@@ -571,6 +571,21 @@ fn handle_command_for_local_page(
                 }
             }
         }
+        Command::AddSelectedItemToQueue => {
+            if let Some(selected) = page_state.file_list.selected() {
+                let selected_entry = &entries.entries()[selected];
+                match selected_entry {
+                    LocalEntry::Directory { .. } => return false, // could add entire folder to queue
+                    LocalEntry::Playable { .. } => {
+                        return client_pub
+                            .send(ClientRequest::AddPlayableToQueue(
+                                crate::client::IdOrLocal::Local(selected_entry.clone()),
+                            ))
+                            .is_ok()
+                    }
+                };
+            }
+        }
         _ => return false,
     }
     true

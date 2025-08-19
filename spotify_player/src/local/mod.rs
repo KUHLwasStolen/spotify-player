@@ -236,7 +236,7 @@ impl LocalEntries {
         };
 
         let mut queue = Vec::with_capacity(self.entries.len().saturating_sub(current_index));
-        for i in current_index..self.entries.len() {
+        for i in current_index + 1..self.entries.len() {
             if let Some(item) = self.entries[i].try_to_playable_item() {
                 queue.push(item);
             }

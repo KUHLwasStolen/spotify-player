@@ -196,7 +196,9 @@ pub fn handle_action_in_context(
                 Ok(true)
             }
             Action::AddToQueue => {
-                client_pub.send(ClientRequest::AddPlayableToQueue(track.id.into()))?;
+                client_pub.send(ClientRequest::AddPlayableToQueue(
+                    crate::client::IdOrLocal::Id(track.id.into()),
+                ))?;
                 ui.popup = None;
                 Ok(true)
             }
@@ -418,7 +420,9 @@ pub fn handle_action_in_context(
                 Ok(false)
             }
             Action::AddToQueue => {
-                client_pub.send(ClientRequest::AddPlayableToQueue(episode.id.into()))?;
+                client_pub.send(ClientRequest::AddPlayableToQueue(
+                    crate::client::IdOrLocal::Id(episode.id.into()),
+                ))?;
                 ui.popup = None;
                 Ok(true)
             }

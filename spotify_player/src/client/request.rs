@@ -1,5 +1,8 @@
-use crate::state::{
-    AlbumId, Category, ContextId, Item, ItemId, PlayableId, Playback, PlaylistId, TrackId,
+use crate::{
+    local::LocalEntry,
+    state::{
+        AlbumId, Category, ContextId, Item, ItemId, PlayableId, Playback, PlaylistId, TrackId,
+    },
 };
 
 #[derive(Clone, Debug)]
@@ -40,7 +43,7 @@ pub enum ClientRequest {
         seed_name: String,
     },
     Search(String),
-    AddPlayableToQueue(PlayableId<'static>),
+    AddPlayableToQueue(IdOrLocal),
     AddAlbumToQueue(AlbumId<'static>),
     AddPlayableToPlaylist(PlaylistId<'static>, PlayableId<'static>),
     DeleteTrackFromPlaylist(PlaylistId<'static>, TrackId<'static>),
@@ -66,4 +69,10 @@ pub enum ClientRequest {
         collab: bool,
         desc: String,
     },
+}
+
+#[derive(Clone, Debug)]
+pub enum IdOrLocal {
+    Id(PlayableId<'static>),
+    Local(LocalEntry),
 }
