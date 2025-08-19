@@ -1,6 +1,6 @@
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
-use ratatui::widgets::block::title;
+use chrono::TimeDelta;
 
 pub mod utils;
 
@@ -113,6 +113,56 @@ impl LocalEntry {
             LocalEntry::Playable { selected, .. } => *selected = value,
         }
     }
+
+    pub fn try_to_playable_item(&self) -> Option<rspotify::model::PlayableItem> {
+        match self {
+            LocalEntry::Directory { .. } => None,
+            LocalEntry::Playable { .. } => Some(rspotify::model::PlayableItem::Track(
+                rspotify::model::FullTrack {
+                    album: rspotify::model::SimplifiedAlbum {
+                        album_group: None,
+                        album_type: None,
+                        artists: Vec::new(),
+                        available_markets: Vec::new(),
+                        external_urls: HashMap::new(),
+                        href: None,
+                        id: None,
+                        images: Vec::new(),
+                        name: self.album(),
+                        release_date: None,
+                        release_date_precision: None,
+                        restrictions: None,
+                    },
+                    artists: self
+                        .artists()
+                        .iter()
+                        .map(|a| rspotify::model::SimplifiedArtist {
+                            external_urls: HashMap::new(),
+                            href: None,
+                            id: None,
+                            name: a.to_string(),
+                        })
+                        .collect(),
+                    available_markets: Vec::new(),
+                    disc_number: 0,
+                    duration: TimeDelta::from_std(self.duration()).unwrap_or(TimeDelta::zero()),
+                    explicit: false,
+                    external_ids: HashMap::new(),
+                    external_urls: HashMap::new(),
+                    href: None,
+                    id: None,
+                    is_local: true,
+                    is_playable: Some(true),
+                    linked_from: None,
+                    restrictions: None,
+                    name: self.name(),
+                    popularity: 0,
+                    preview_url: None,
+                    track_number: 0,
+                },
+            )),
+        }
+    }
 }
 
 impl Ord for LocalEntry {
@@ -176,5 +226,25 @@ impl LocalEntries {
 
     pub fn entries_mut(&mut self) -> &mut Vec<LocalEntry> {
         &mut self.entries
+    }
+
+    pub fn to_user_queue(&self, current_index: usize) -> rspotify::model::CurrentUserQueue {
+        let currently_playing = if current_index < self.entries.len() {
+            self.entries[current_index].try_to_playable_item()
+        } else {
+            None
+        };
+
+        let mut queue = Vec::with_capacity(self.entries.len().saturating_sub(current_index));
+        for i in current_index..self.entries.len() {
+            if let Some(item) = self.entries[i].try_to_playable_item() {
+                queue.push(item);
+            }
+        }
+
+        rspotify::model::CurrentUserQueue {
+            currently_playing,
+            queue,
+        }
     }
 }

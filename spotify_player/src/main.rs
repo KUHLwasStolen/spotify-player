@@ -17,7 +17,6 @@ mod ui;
 mod utils;
 
 use anyhow::{Context, Result};
-use parking_lot::Mutex;
 use std::{io::Write, sync::Arc};
 
 fn init_spotify(
@@ -119,11 +118,9 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
     // create a Spotify API and local playback client
     let auth_config = auth::AuthConfig::new(configs)?;
     let local_stream_handle = rodio::OutputStreamBuilder::open_default_stream()?;
-    let current_local_sink = Arc::new(tokio::sync::Mutex::new(None));
     let client = client::Client::new(
         auth_config,
         Arc::new(tokio::sync::Mutex::new(local_stream_handle)),
-        current_local_sink,
     );
     client
         .new_session(Some(state), true)

@@ -574,7 +574,8 @@ fn handle_global_command(
         Command::VolumeChange { offset } => {
             if let Some(ref playback) = state.player.read().buffered_playback {
                 if let Some(volume) = playback.volume {
-                    let volume = std::cmp::min(volume as i32 + offset, 100_i32);
+                    let volume =
+                        std::cmp::max(0i32, std::cmp::min(volume as i32 + offset, 100_i32));
                     client_pub.send(ClientRequest::Player(PlayerRequest::Volume(volume as u8)))?;
                 }
             }
