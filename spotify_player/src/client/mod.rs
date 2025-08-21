@@ -25,6 +25,7 @@ use chrono::TimeDelta;
 #[cfg(feature = "streaming")]
 use parking_lot::Mutex;
 
+use rand::seq::SliceRandom;
 use reqwest::StatusCode;
 use rspotify::model::CurrentPlaybackContext;
 use rspotify::{http::Query, prelude::*};
@@ -256,11 +257,9 @@ impl Client {
         let mut playback = playback.context("no playback found")?;
         let device_id = playback.device_id.as_deref();
 
-        let mode_lock = self.mode.lock().await;
-        let mode = mode_lock.clone();
-        drop(mode_lock);
+        let mut mode = self.mode.lock().await;
 
-        match mode {
+        match &mut (*mode) {
             ClientMode::Online => match request {
                 PlayerRequest::NextTrack => self.next_track(device_id).await?,
                 PlayerRequest::PreviousTrack => self.previous_track(device_id).await?,
@@ -278,25 +277,9 @@ impl Client {
                 }
                 PlayerRequest::ResumePause => {
                     if playback.is_playing {
-                        match mode {
-                            ClientMode::Online => self.pause_playback(device_id).await?,
-                            ClientMode::Local { .. } => {
-                                let sink = self.current_local_sink.lock().await;
-                                if let Some(sink) = &(*sink) {
-                                    sink.pause();
-                                }
-                            }
-                        }
+                        self.pause_playback(device_id).await?;
                     } else {
-                        match mode {
-                            ClientMode::Online => self.resume_playback(device_id, None).await?,
-                            ClientMode::Local { .. } => {
-                                let sink = self.current_local_sink.lock().await;
-                                if let Some(sink) = &(*sink) {
-                                    sink.play();
-                                }
-                            }
-                        }
+                        self.resume_playback(device_id, None).await?;
                     }
                     playback.is_playing = !playback.is_playing;
                 }
@@ -348,7 +331,7 @@ impl Client {
                     anyhow::bail!("`TransferPlayback` should be handled earlier")
                 }
             },
-            ClientMode::Local { mut queue } => {
+            ClientMode::Local { queue } => {
                 let sink = self.current_local_sink.lock().await;
 
                 if let Some(sink) = &(*sink) {
@@ -417,13 +400,54 @@ impl Client {
                         PlayerRequest::SeekTrack(position_ms) => {
                             let _ = sink.try_seek(position_ms.to_std().unwrap_or(Duration::ZERO));
                         }
+                        PlayerRequest::Shuffle => {
+                            let q_len = queue.entries().len();
+                            let s_len = sink.len();
+                            let current_index = q_len - s_len;
+                            if queue.entries().get(current_index).is_some() {
+                                let current_pos = sink.get_pos();
+                                if playback.shuffle_state {
+                                    sink.clear();
+                                    let current = queue.entries()[current_index].clone();
+                                    queue.entries_mut().sort();
+                                    let mut new_index = 0;
+                                    for i in 0..q_len {
+                                        if queue.entries()[i].full_path() == current.full_path() {
+                                            new_index = i;
+                                            break;
+                                        }
+                                    }
+                                    for i in new_index..q_len {
+                                        let track = &mut queue.entries_mut()[i];
+                                        crate::local::utils::add_entry_to_sink(track, sink);
+                                    }
+                                    let _ = sink.try_seek(current_pos);
+                                    sink.play();
+                                    playback.is_playing = true;
+                                } else {
+                                    sink.clear();
+                                    let current = queue.entries_mut().remove(current_index);
+                                    let mut rng = rand::rng();
+                                    queue.entries_mut().shuffle(&mut rng);
+                                    queue.entries_mut().push(current);
+                                    queue.entries_mut().swap(0, q_len - 1);
+                                    for track in queue.entries_mut() {
+                                        crate::local::utils::add_entry_to_sink(track, sink);
+                                    }
+                                    let _ = sink.try_seek(current_pos);
+                                    sink.play();
+                                    playback.is_playing = true;
+                                }
+                            }
+                            playback.shuffle_state = !playback.shuffle_state;
+                        }
+                        PlayerRequest::Repeat => {}
                         PlayerRequest::StartPlayback(..) => {
                             anyhow::bail!("`StartPlayback` should be handled earlier")
                         }
                         PlayerRequest::TransferPlayback(..) => {
                             anyhow::bail!("`TransferPlayback` should be handled earlier")
                         }
-                        _ => {}
                     }
                 }
             }
@@ -1831,7 +1855,7 @@ impl Client {
             }
             ClientMode::Local { queue } => {
                 let sink = self.current_local_sink.lock().await;
-                let (index, position, is_playing, volume) = match &(*sink) {
+                let (index, position, is_playing, volume_percent) = match &(*sink) {
                     Some(sink) => {
                         let index = queue.entries().len() - sink.len();
                         (
@@ -1860,7 +1884,7 @@ impl Client {
                             is_restricted: false,
                             name: "Local Player".to_string(),
                             _type: rspotify::model::DeviceType::Computer,
-                            volume_percent: volume,
+                            volume_percent,
                         },
                         repeat_state: rspotify::model::RepeatState::Off,
                         shuffle_state: false,
@@ -1887,6 +1911,7 @@ impl Client {
                         }
                         playback.mute_state = bp.mute_state;
                         playback.fake_track_repeat_state = bp.fake_track_repeat_state;
+                        playback.shuffle_state = bp.shuffle_state;
                     }
                     playback
                 });

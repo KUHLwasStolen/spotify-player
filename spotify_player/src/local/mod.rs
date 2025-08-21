@@ -63,8 +63,6 @@ impl LocalEntry {
         }
     }
 
-    // allow dead code as function might be useful later
-    #[allow(dead_code)]
     pub fn full_path(&self) -> &String {
         match self {
             LocalEntry::Directory { full_path } | LocalEntry::Playable { full_path, .. } => {
