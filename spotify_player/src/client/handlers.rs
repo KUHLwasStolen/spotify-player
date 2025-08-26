@@ -76,40 +76,69 @@ fn handle_playback_change_event(
         }
     }
 
-    // return early when in local playback mode
+    // local playback mode
     if is_local && id.is_none() {
-        return Ok(());
-    }
-
-    if let Some(queue) = player.queue.as_ref() {
-        // queue needs to be updated if its playing track is different from actual playback's playing track
-        if let Some(queue_track) = queue.currently_playing.as_ref() {
-            if queue_track.id().expect("null track_id") != *id.as_ref().expect("null track_id") {
-                client_pub.send(ClientRequest::GetCurrentUserQueue)?;
+        if let Some(queue) = player.queue.as_ref() {
+            // queue needs to be updated if its playing track is different from actual playback's playing track
+            if let Some(queue_track) = queue.currently_playing.as_ref() {
+                if let rspotify::model::PlayableItem::Track(full_track) = queue_track {
+                    if full_track.name != *name {
+                        client_pub.send(ClientRequest::GetCurrentUserQueue)?;
+                    }
+                }
             }
+        } else {
+            client_pub.send(ClientRequest::GetCurrentUserQueue)?;
         }
-    } else {
-        client_pub.send(ClientRequest::GetCurrentUserQueue)?;
-    }
 
-    // handle fake track repeat mode
-    if playback.fake_track_repeat_state {
-        if let Some(progress) = player.playback_progress() {
-            // re-queue the current track if it's about to end while
-            // ensuring that only one `AddTrackToQueue` request is made
-            if progress + chrono::TimeDelta::seconds(5) >= duration
-                && playback.is_playing
-                && handler_state.add_track_to_queue_req_timer.elapsed()
-                    > std::time::Duration::from_secs(10)
-            {
-                tracing::info!(
-                    "fake track repeat mode is enabled, add the current track ({}) to queue",
-                    name
-                );
-                client_pub.send(ClientRequest::AddPlayableToQueue(
-                    crate::client::IdOrLocal::Id(id.expect("null track_id")),
-                ))?;
-                handler_state.add_track_to_queue_req_timer = std::time::Instant::now();
+        match playback.repeat_state {
+            rspotify::model::RepeatState::Off => {},
+            rspotify::model::RepeatState::Track | rspotify::model::RepeatState::Context => {
+                if let Some(progress) = player.playback_progress() {
+                    // handle the current repeat setting
+                    // while ensuring this is only done once
+                    if progress + chrono::TimeDelta::milliseconds(1250) >= duration
+                        && playback.is_playing
+                        && handler_state.add_track_to_queue_req_timer.elapsed()
+                            > std::time::Duration::from_secs(5)
+                    {
+                        client_pub.send(ClientRequest::Player(super::PlayerRequest::LocalRepeatEvent))?;
+                        handler_state.add_track_to_queue_req_timer = std::time::Instant::now();
+                    }
+                }
+            },
+        }
+    } else { // online playback mode
+        if let Some(queue) = player.queue.as_ref() {
+            // queue needs to be updated if its playing track is different from actual playback's playing track
+            if let Some(queue_track) = queue.currently_playing.as_ref() {
+                if queue_track.id().expect("null track_id") != *id.as_ref().expect("null track_id") {
+                    client_pub.send(ClientRequest::GetCurrentUserQueue)?;
+                }
+            }
+        } else {
+            client_pub.send(ClientRequest::GetCurrentUserQueue)?;
+        }
+
+        // handle fake track repeat mode
+        if playback.fake_track_repeat_state {
+            if let Some(progress) = player.playback_progress() {
+                // re-queue the current track if it's about to end while
+                // ensuring that only one `AddTrackToQueue` request is made
+                if progress + chrono::TimeDelta::seconds(5) >= duration
+                    && playback.is_playing
+                    && handler_state.add_track_to_queue_req_timer.elapsed()
+                        > std::time::Duration::from_secs(10)
+                {
+                    tracing::info!(
+                        "fake track repeat mode is enabled, add the current track ({}) to queue",
+                        name
+                    );
+                    client_pub.send(ClientRequest::AddPlayableToQueue(
+                        crate::client::IdOrLocal::Id(id.expect("null track_id")),
+                    ))?;
+                    handler_state.add_track_to_queue_req_timer = std::time::Instant::now();
+                }
             }
         }
     }

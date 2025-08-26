@@ -330,11 +330,18 @@ impl Client {
                 PlayerRequest::TransferPlayback(..) => {
                     anyhow::bail!("`TransferPlayback` should be handled earlier")
                 }
+                PlayerRequest::LocalRepeatEvent => {
+                    anyhow::bail!("`LocalRepeatEvent` request can only be handled in `ClientMode::Local`")
+                }
             },
             ClientMode::Local { queue } => {
                 let sink = self.current_local_sink.lock().await;
 
                 if let Some(sink) = &(*sink) {
+                    let q_len = queue.entries().len();
+                    let s_len = sink.len();
+                    let current_index = q_len - s_len;
+
                     match request {
                         PlayerRequest::NextTrack => {
                             sink.skip_one();
@@ -401,9 +408,6 @@ impl Client {
                             let _ = sink.try_seek(position_ms.to_std().unwrap_or(Duration::ZERO));
                         }
                         PlayerRequest::Shuffle => {
-                            let q_len = queue.entries().len();
-                            let s_len = sink.len();
-                            let current_index = q_len - s_len;
                             if queue.entries().get(current_index).is_some() {
                                 let current_pos = sink.get_pos();
                                 if playback.shuffle_state {
@@ -441,7 +445,37 @@ impl Client {
                             }
                             playback.shuffle_state = !playback.shuffle_state;
                         }
-                        PlayerRequest::Repeat => {}
+                        // handles the rotation of repeat states
+                        PlayerRequest::Repeat => {
+                            let next_repeat_state = match playback.repeat_state {
+                                rspotify::model::RepeatState::Off => rspotify::model::RepeatState::Track,
+                                rspotify::model::RepeatState::Track => {
+                                    rspotify::model::RepeatState::Context
+                                }
+                                rspotify::model::RepeatState::Context => rspotify::model::RepeatState::Off,
+                            };
+
+                            playback.repeat_state = next_repeat_state;
+                        }
+                        // handles the actual repeating
+                        PlayerRequest::LocalRepeatEvent => {
+                            if queue.entries_mut().get(current_index).is_some() {
+                                match playback.repeat_state {
+                                    rspotify::model::RepeatState::Off => {},
+                                    rspotify::model::RepeatState::Track => {
+                                        let _ = sink.try_seek(Duration::ZERO);
+                                    },
+                                    rspotify::model::RepeatState::Context => {
+                                        // if last item in queue
+                                        if current_index == q_len - 1 {
+                                            for track in queue.entries_mut() {
+                                                crate::local::utils::add_entry_to_sink(track, sink);
+                                            }
+                                        }
+                                    },
+                                }
+                            }
+                        }
                         PlayerRequest::StartPlayback(..) => {
                             anyhow::bail!("`StartPlayback` should be handled earlier")
                         }
@@ -1912,6 +1946,7 @@ impl Client {
                         playback.mute_state = bp.mute_state;
                         playback.fake_track_repeat_state = bp.fake_track_repeat_state;
                         playback.shuffle_state = bp.shuffle_state;
+                        playback.repeat_state = bp.repeat_state;
                     }
                     playback
                 });

@@ -20,6 +20,7 @@ pub enum PlayerRequest {
     ToggleMute,
     TransferPlayback(String, bool),
     StartPlayback(Playback, Option<bool>),
+    LocalRepeatEvent,
 }
 
 #[derive(Clone, Debug)]
