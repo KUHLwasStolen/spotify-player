@@ -29,7 +29,7 @@ pub async fn start_client_handler(
         }
 
         let state = state.clone();
-        let client = client.clone();
+        let mut client = client.clone();
         let span = tracing::info_span!("client_request", request = ?request);
 
         tokio::task::spawn(
@@ -49,21 +49,22 @@ fn handle_playback_change_event(
     handler_state: &mut PlayerEventHandlerState,
 ) -> anyhow::Result<()> {
     let player = state.player.read();
-    let (playback, id, name, duration) = match (
+
+    let (playback, id, name, duration, is_local) = match (
         player.buffered_playback.as_ref(),
         player.currently_playing(),
     ) {
-        (Some(playback), Some(rspotify::model::PlayableItem::Track(track))) => (
-            playback,
-            PlayableId::Track(track.id.clone().expect("null track_id")),
-            &track.name,
-            track.duration,
-        ),
+        (Some(playback), Some(rspotify::model::PlayableItem::Track(track))) => {
+            let id = track.id.as_ref().map(|id| PlayableId::Track(id.clone()));
+
+            (playback, id, &track.name, track.duration, track.is_local)
+        }
         (Some(playback), Some(rspotify::model::PlayableItem::Episode(episode))) => (
             playback,
-            PlayableId::Episode(episode.id.clone()),
+            Some(PlayableId::Episode(episode.id.clone())),
             &episode.name,
             episode.duration,
+            false,
         ),
         _ => return Ok(()),
     };
@@ -75,33 +76,69 @@ fn handle_playback_change_event(
         }
     }
 
-    if let Some(queue) = player.queue.as_ref() {
-        // queue needs to be updated if its playing track is different from actual playback's playing track
-        if let Some(queue_track) = queue.currently_playing.as_ref() {
-            if queue_track.id().expect("null track_id") != id {
-                client_pub.send(ClientRequest::GetCurrentUserQueue)?;
+    // local playback mode
+    if is_local && id.is_none() {
+        if let Some(queue) = player.queue.as_ref() {
+            // queue needs to be updated if its playing track is different from actual playback's playing track
+            if let Some(queue_track) = queue.currently_playing.as_ref() {
+                if let rspotify::model::PlayableItem::Track(full_track) = queue_track {
+                    if full_track.name != *name {
+                        client_pub.send(ClientRequest::GetCurrentUserQueue)?;
+                    }
+                }
             }
+        } else {
+            client_pub.send(ClientRequest::GetCurrentUserQueue)?;
         }
-    } else {
-        client_pub.send(ClientRequest::GetCurrentUserQueue)?;
-    }
 
-    // handle fake track repeat mode
-    if playback.fake_track_repeat_state {
-        if let Some(progress) = player.playback_progress() {
-            // re-queue the current track if it's about to end while
-            // ensuring that only one `AddTrackToQueue` request is made
-            if progress + chrono::TimeDelta::seconds(5) >= duration
-                && playback.is_playing
-                && handler_state.add_track_to_queue_req_timer.elapsed()
-                    > std::time::Duration::from_secs(10)
-            {
-                tracing::info!(
-                    "fake track repeat mode is enabled, add the current track ({}) to queue",
-                    name
-                );
-                client_pub.send(ClientRequest::AddPlayableToQueue(id))?;
-                handler_state.add_track_to_queue_req_timer = std::time::Instant::now();
+        match playback.repeat_state {
+            rspotify::model::RepeatState::Off => {},
+            rspotify::model::RepeatState::Track | rspotify::model::RepeatState::Context => {
+                if let Some(progress) = player.playback_progress() {
+                    // handle the current repeat setting
+                    // while ensuring this is only done once
+                    if progress + chrono::TimeDelta::milliseconds(1250) >= duration
+                        && playback.is_playing
+                        && handler_state.add_track_to_queue_req_timer.elapsed()
+                            > std::time::Duration::from_secs(5)
+                    {
+                        client_pub.send(ClientRequest::Player(super::PlayerRequest::LocalRepeatEvent))?;
+                        handler_state.add_track_to_queue_req_timer = std::time::Instant::now();
+                    }
+                }
+            },
+        }
+    } else { // online playback mode
+        if let Some(queue) = player.queue.as_ref() {
+            // queue needs to be updated if its playing track is different from actual playback's playing track
+            if let Some(queue_track) = queue.currently_playing.as_ref() {
+                if queue_track.id().expect("null track_id") != *id.as_ref().expect("null track_id") {
+                    client_pub.send(ClientRequest::GetCurrentUserQueue)?;
+                }
+            }
+        } else {
+            client_pub.send(ClientRequest::GetCurrentUserQueue)?;
+        }
+
+        // handle fake track repeat mode
+        if playback.fake_track_repeat_state {
+            if let Some(progress) = player.playback_progress() {
+                // re-queue the current track if it's about to end while
+                // ensuring that only one `AddTrackToQueue` request is made
+                if progress + chrono::TimeDelta::seconds(5) >= duration
+                    && playback.is_playing
+                    && handler_state.add_track_to_queue_req_timer.elapsed()
+                        > std::time::Duration::from_secs(10)
+                {
+                    tracing::info!(
+                        "fake track repeat mode is enabled, add the current track ({}) to queue",
+                        name
+                    );
+                    client_pub.send(ClientRequest::AddPlayableToQueue(
+                        crate::client::IdOrLocal::Id(id.expect("null track_id")),
+                    ))?;
+                    handler_state.add_track_to_queue_req_timer = std::time::Instant::now();
+                }
             }
         }
     }
@@ -186,6 +223,22 @@ fn handle_page_change_event(
                         })?;
                     }
                 }
+            }
+        }
+
+        PageState::Local { entries, .. } => {
+            if let Some(rspotify::model::PlayableItem::Track(current_track)) =
+                state.player.read().currently_playing()
+            {
+                for i in 0..entries.entries().len() {
+                    let entry = &entries.entries()[i];
+                    if entry.name() == current_track.name {
+                        entries.select(i);
+                        break;
+                    }
+                }
+            } else {
+                entries.unselect_all();
             }
         }
         _ => {}

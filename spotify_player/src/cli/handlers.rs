@@ -7,7 +7,7 @@ use super::{
 use anyhow::{Context, Result};
 use clap::{ArgMatches, Id};
 use clap_complete::{generate, Shell};
-use std::net::UdpSocket;
+use std::{net::UdpSocket, sync::Arc};
 
 fn receive_response(socket: &UdpSocket) -> Result<Response> {
     // read response from the server's socket, which can be split into
@@ -155,10 +155,13 @@ fn try_connect_to_client(socket: &UdpSocket, configs: &config::Configs) -> Resul
 
             let rt = tokio::runtime::Runtime::new()?;
 
-            // create a Spotify API client
+            // create a Spotify API and local playback client
+            let local_stream_handle = rodio::OutputStreamBuilder::open_default_stream()?;
+            let local_stream_handle = Arc::new(tokio::sync::Mutex::new(local_stream_handle));
             let client = rt
-                .block_on(client::AppClient::new())
+                .block_on(client::AppClient::new(local_stream_handle))
                 .context("construct app client")?;
+
             rt.block_on(client.new_session(None, false))
                 .context("new session")?;
 

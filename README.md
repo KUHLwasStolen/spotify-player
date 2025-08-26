@@ -37,6 +37,7 @@
 - Support [image rendering](#image).
 - Support [desktop notification](#notify).
 - Support running the application as [a daemon](#daemon)
+- Support [offline playback](#local-player) of your own local music files
 - Offer a wide range of [CLI commands](#cli-commands)
 
 ## Examples
@@ -393,6 +394,7 @@ List of supported commands:
 | `BrowsePage`                    | go to the browse page                                                                              | `g b`              |
 | `Queue`                         | go to the queue page                                                                               | `z`                |
 | `OpenCommandHelp`               | go to the command help page                                                                        | `?`, `C-h`         |
+| `LocalPage`                     | go to the local player page                                                                        | `g o`              |
 | `PreviousPage`                  | go to the previous page                                                                            | `backspace`, `C-q` |
 | `OpenSpotifyLinkFromClipboard`  | open a Spotify link from clipboard                                                                 | `O`                |
 | `SortTrackByTitle`              | sort the track table (if any) by track's title                                                     | `s t`              |
@@ -442,6 +444,11 @@ These actions can also be bound to a shortcut. To add new shortcuts, please refe
 When first entering the search page, the application focuses on the search input. User can then input text, delete one character backward using `backspace`, or search the text using `enter`.
 
 To move the focus from the search input to the other windows such as track results, album results, etc, use `FocusNextWindow` or `FocusPreviousWindow`.
+
+### Local Player
+
+`spotify_player` can not only play songs from Spotify, but also play songs directly from your own local music library.  
+By default, you can access the local player via pressing `g o` _("go offline")_ and it will show you your `local_library_root` directory as specified in the config.  
 
 ## Configurations
 

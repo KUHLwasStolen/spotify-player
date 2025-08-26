@@ -334,7 +334,7 @@ fn handle_command_for_track_table_window(
         }
         Command::AddSelectedItemToQueue => {
             client_pub.send(ClientRequest::AddPlayableToQueue(
-                filtered_tracks[id].id.clone().into(),
+                crate::client::IdOrLocal::Id(filtered_tracks[id].id.clone().into()),
             ))?;
         }
         Command::JumpToHighlightTrackInContext => {
@@ -395,7 +395,7 @@ pub fn handle_command_for_track_list_window(
         }
         Command::AddSelectedItemToQueue => {
             client_pub.send(ClientRequest::AddPlayableToQueue(
-                tracks[id].id.clone().into(),
+                crate::client::IdOrLocal::Id(tracks[id].id.clone().into()),
             ))?;
         }
         _ => return Ok(false),
@@ -601,7 +601,7 @@ pub fn handle_command_for_episode_list_window(
         }
         Command::AddSelectedItemToQueue => {
             client_pub.send(ClientRequest::AddPlayableToQueue(
-                episodes[id].id.clone().into(),
+                crate::client::IdOrLocal::Id(episodes[id].id.clone().into()),
             ))?;
         }
         _ => return Ok(false),
@@ -646,7 +646,7 @@ fn handle_command_for_episode_table_window(
         }
         Command::AddSelectedItemToQueue => {
             client_pub.send(ClientRequest::AddPlayableToQueue(
-                episodes[id].id.clone().into(),
+                crate::client::IdOrLocal::Id(episodes[id].id.clone().into()),
             ))?;
         }
         _ => return Ok(false),

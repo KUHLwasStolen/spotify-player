@@ -67,6 +67,7 @@ pub enum Command {
     LibraryPage,
     SearchPage,
     BrowsePage,
+    LocalPage,
     PreviousPage,
     OpenSpotifyLinkFromClipboard,
 
@@ -350,6 +351,7 @@ impl Command {
             Self::BrowsePage => "go to the browse page",
             Self::Queue => "go to the queue page",
             Self::OpenCommandHelp => "go to the command help page",
+            Self::LocalPage => "go to the local player page",
             Self::PreviousPage => "go to the previous page",
             Self::OpenSpotifyLinkFromClipboard => "open a Spotify link from clipboard",
             Self::SortTrackByTitle => "sort the track table (if any) by track's title",

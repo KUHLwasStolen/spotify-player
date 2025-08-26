@@ -118,6 +118,8 @@ pub struct AppConfig {
     pub seek_duration_secs: u16,
 
     pub sort_artist_albums_by_type: bool,
+
+    pub local_library_root: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -204,6 +206,7 @@ pub struct LibraryLayoutConfig {
     pub album_percent: u16,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 #[serde(from = "StreamingTypeOrBool")]
 pub enum StreamingType {
@@ -221,6 +224,7 @@ enum RawStreamingType {
     Never,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum StreamingTypeOrBool {
@@ -338,6 +342,8 @@ impl Default for AppConfig {
             seek_duration_secs: 5,
 
             sort_artist_albums_by_type: false,
+
+            local_library_root: ".".to_string(),
         }
     }
 }

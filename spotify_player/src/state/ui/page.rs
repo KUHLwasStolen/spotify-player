@@ -1,4 +1,5 @@
 use crate::{
+    local::LocalEntries,
     state::model::{Category, ContextId},
     ui::single_line_input::LineInput,
 };
@@ -33,6 +34,11 @@ pub enum PageState {
     CommandHelp {
         scroll_offset: usize,
     },
+    Local {
+        state: LocalPageUIState,
+        current_dir: String,
+        entries: LocalEntries,
+    },
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -44,6 +50,7 @@ pub enum PageType {
     Lyrics,
     Queue,
     CommandHelp,
+    Local,
 }
 
 #[derive(Clone, Debug)]
@@ -64,6 +71,11 @@ pub struct SearchPageUIState {
     pub show_list: ListState,
     pub episode_list: ListState,
     pub focus: SearchFocusState,
+}
+
+#[derive(Clone, Debug)]
+pub struct LocalPageUIState {
+    pub file_list: ListState,
 }
 
 #[derive(Clone, Debug)]
@@ -147,6 +159,7 @@ impl PageState {
             PageState::Lyrics { .. } => PageType::Lyrics,
             PageState::Queue { .. } => PageType::Queue,
             PageState::CommandHelp { .. } => PageType::CommandHelp,
+            PageState::Local { .. } => PageType::Local,
         }
     }
 
@@ -235,6 +248,7 @@ impl PageState {
             Self::CommandHelp { scroll_offset } | Self::Queue { scroll_offset } => {
                 Some(MutableWindowState::Scroll(scroll_offset))
             }
+            Self::Local { state, .. } => Some(MutableWindowState::List(&mut state.file_list)),
         }
     }
 }

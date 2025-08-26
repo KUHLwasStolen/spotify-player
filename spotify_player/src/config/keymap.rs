@@ -193,6 +193,10 @@ impl Default for KeymapConfig {
                     command: Command::BrowsePage,
                 },
                 Keymap {
+                    key_sequence: "g o".into(),
+                    command: Command::LocalPage,
+                },
+                Keymap {
                     key_sequence: "backspace".into(),
                     command: Command::PreviousPage,
                 },

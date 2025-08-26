@@ -47,7 +47,7 @@ All configuration files should be placed inside the application's configuration 
 | `enable_cover_image_cache`        | store album's cover images in the cache folder                                                                                                         | `true`                                                      |
 | `notify_streaming_only`           | only send notification when streaming is enabled (`streaming` and `notify` feature only)                                                               | `false`                                                     |
 | `default_device`                  | the default device to connect to on startup if no playing device found                                                                                 | `spotify-player`                                            |
-| `play_icon`                       | the icon to indicate playing state of a Spotify item                                                                                                   | `▶`                                                         |
+| `play_icon`                       | the icon to indicate playing state of a Spotify item                                                                                                   | `▶`                                                        |
 | `pause_icon`                      | the icon to indicate pause state of a Spotify item                                                                                                     | `▌▌`                                                        |
 | `liked_icon`                      | the icon to indicate the liked state of a song                                                                                                         | `♥`                                                         |
 | `border_type`                     | the type of the application's borders                                                                                                                  | `Plain`                                                     |
@@ -58,6 +58,7 @@ All configuration files should be placed inside the application's configuration 
 | `cover_img_pixels`                | the amount of pixels per side of the cover image (`image` and `pixelate` feature only)                                                                 | `16`                                                        |
 | `seek_duration_secs`              | the duration (in seconds) to seek when using `SeekForward` and `SeekBackward` commands                                                                 | `5`                                                         |
 | `sort_artist_albums_by_type`      | sort albums on artist's pages by type, i.e. album or single                                                                                            | `false`                                                     |
+| `local_library_root`              | the root directory of your local music library                                                                                                         | `.`                                                         |
 
 ### Notes
 

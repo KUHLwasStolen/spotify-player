@@ -1,5 +1,9 @@
+use std::path::Path;
+
 use anyhow::Context as _;
 use command::CommandOrAction;
+
+use crate::local::{LocalEntries, LocalEntry};
 
 use super::*;
 
@@ -11,7 +15,7 @@ pub fn handle_key_sequence_for_page(
 ) -> Result<bool> {
     let page_type = ui.current_page().page_type();
     // handle search page separately as it needs access to the raw key sequence
-    // as opposed to the matched command
+    // as opposed to the matched commandhandle_navigation_command
     if page_type == PageType::Search {
         return handle_key_sequence_for_search_page(key_sequence, client_pub, state, ui);
     }
@@ -29,6 +33,7 @@ pub fn handle_key_sequence_for_page(
             PageType::Lyrics => Ok(false),
             PageType::Queue => Ok(handle_command_for_queue_page(command, ui)),
             PageType::CommandHelp => Ok(handle_command_for_command_help_page(command, ui)),
+            PageType::Local => Ok(handle_command_for_local_page(command, client_pub, ui)),
         },
         Some(CommandOrAction::Action(action, ActionTarget::SelectedItem)) => match page_type {
             PageType::Search => anyhow::bail!("page search type should already be handled!"),
@@ -501,6 +506,89 @@ fn handle_command_for_command_help_page(command: Command, ui: &mut UIStateGuard)
     }
     let count = ui.count_prefix;
     handle_navigation_command(command, ui.current_page_mut(), scroll_offset, 10000, count)
+}
+
+fn handle_command_for_local_page(
+    command: Command,
+    client_pub: &flume::Sender<ClientRequest>,
+    ui: &mut UIStateGuard,
+) -> bool {
+    let PageState::Local {
+        state: page_state,
+        current_dir,
+        entries,
+    } = ui.current_page_mut()
+    else {
+        return false;
+    };
+
+    match command {
+        Command::SelectNextOrScrollDown => page_state.file_list.select_next(),
+        Command::SelectPreviousOrScrollUp => page_state.file_list.select_previous(),
+        Command::SelectFirstOrScrollToTop => page_state.file_list.select_first(),
+        Command::SelectLastOrScrollToBottom => page_state.file_list.select_last(),
+        Command::ChooseSelected => {
+            if let Some(selected) = page_state.file_list.selected() {
+                let selected_entry = &entries.entries()[selected];
+                match selected_entry {
+                    LocalEntry::Directory { .. } => {
+                        if selected_entry.name() == ".." {
+                            let path = Path::new(current_dir);
+                            *current_dir = match path.parent() {
+                                Some(parent) => parent.display().to_string(),
+                                None => return true,
+                            }
+                        } else {
+                            let to_append = if cfg!(target_os = "windows") {
+                                format!("\\{}", selected_entry.name())
+                            } else {
+                                format!("/{}", selected_entry.name())
+                            };
+                            current_dir.push_str(&to_append);
+                        }
+
+                        page_state.file_list.select(Some(0));
+                        *entries = crate::local::utils::get_local_entries(std::path::Path::new(
+                            current_dir,
+                        ));
+                    }
+                    LocalEntry::Playable { .. } => {
+                        entries.select(selected);
+                        let mut to_play = Vec::with_capacity(entries.entries().len() - selected);
+                        for i in selected..entries.entries().len() {
+                            to_play.push(entries.entries()[i].clone());
+                        }
+
+                        let local_playback = Playback::Local(LocalEntries::new(to_play));
+
+                        return client_pub
+                            .send(ClientRequest::Player(PlayerRequest::StartPlayback(
+                                local_playback,
+                                None,
+                            )))
+                            .is_ok();
+                    }
+                }
+            }
+        }
+        Command::AddSelectedItemToQueue => {
+            if let Some(selected) = page_state.file_list.selected() {
+                let selected_entry = &entries.entries()[selected];
+                match selected_entry {
+                    LocalEntry::Directory { .. } => return false, // could add entire folder to queue
+                    LocalEntry::Playable { .. } => {
+                        return client_pub
+                            .send(ClientRequest::AddPlayableToQueue(
+                                crate::client::IdOrLocal::Local(selected_entry.clone()),
+                            ))
+                            .is_ok()
+                    }
+                };
+            }
+        }
+        _ => return false,
+    }
+    true
 }
 
 pub fn handle_navigation_command(

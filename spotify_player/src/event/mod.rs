@@ -9,10 +9,10 @@ use crate::{
     state::{
         ActionListItem, Album, AlbumId, Artist, ArtistFocusState, ArtistId, ArtistPopupAction,
         BrowsePageUIState, Context, ContextId, ContextPageType, ContextPageUIState, DataReadGuard,
-        Focusable, Id, Item, ItemId, LibraryFocusState, LibraryPageUIState, PageState, PageType,
-        PlayableId, Playback, PlaylistCreateCurrentField, PlaylistFolderItem, PlaylistId,
-        PlaylistPopupAction, PopupState, SearchFocusState, SearchPageUIState, SharedState, ShowId,
-        Track, TrackId, TrackOrder, UIStateGuard, USER_LIKED_TRACKS_ID,
+        Focusable, Id, Item, ItemId, LibraryFocusState, LibraryPageUIState, LocalPageUIState,
+        PageState, PageType, PlayableId, Playback, PlaylistCreateCurrentField, PlaylistFolderItem,
+        PlaylistId, PlaylistPopupAction, PopupState, SearchFocusState, SearchPageUIState,
+        SharedState, ShowId, Track, TrackId, TrackOrder, UIStateGuard, USER_LIKED_TRACKS_ID,
         USER_RECENTLY_PLAYED_TRACKS_ID, USER_TOP_TRACKS_ID,
     },
     ui::{single_line_input::LineInput, Orientation},
@@ -196,7 +196,9 @@ pub fn handle_action_in_context(
                 Ok(true)
             }
             Action::AddToQueue => {
-                client_pub.send(ClientRequest::AddPlayableToQueue(track.id.into()))?;
+                client_pub.send(ClientRequest::AddPlayableToQueue(
+                    crate::client::IdOrLocal::Id(track.id.into()),
+                ))?;
                 ui.popup = None;
                 Ok(true)
             }
@@ -418,7 +420,9 @@ pub fn handle_action_in_context(
                 Ok(false)
             }
             Action::AddToQueue => {
-                client_pub.send(ClientRequest::AddPlayableToQueue(episode.id.into()))?;
+                client_pub.send(ClientRequest::AddPlayableToQueue(
+                    crate::client::IdOrLocal::Id(episode.id.into()),
+                ))?;
                 ui.popup = None;
                 Ok(true)
             }
@@ -574,7 +578,7 @@ fn handle_global_command(
         Command::VolumeChange { offset } => {
             if let Some(ref playback) = state.player.read().buffered_playback {
                 if let Some(volume) = playback.volume {
-                    let volume = std::cmp::min(volume as i32 + offset, 100_i32);
+                    let volume = (volume as i32 + offset).clamp(0i32, 100i32);
                     client_pub.send(ClientRequest::Player(PlayerRequest::Volume(volume as u8)))?;
                 }
             }
@@ -775,6 +779,18 @@ fn handle_global_command(
                     })?;
                 }
             }
+        }
+        Command::LocalPage => {
+            let default_path = config::get_config().app_config.local_library_root.clone();
+            let entries =
+                crate::local::utils::get_local_entries(std::path::Path::new(&default_path));
+            ui.new_page(PageState::Local {
+                state: LocalPageUIState {
+                    file_list: ListState::default(),
+                },
+                current_dir: default_path,
+                entries,
+            });
         }
         Command::SwitchDevice => {
             ui.popup = Some(PopupState::DeviceList(ListState::default()));
