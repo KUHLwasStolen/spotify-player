@@ -153,15 +153,15 @@ fn try_connect_to_client(socket: &UdpSocket, configs: &config::Configs) -> Resul
             // no running `spotify_player` instance found,
             // initialize a new client to handle the current CLI command
 
-            let auth_config = AuthConfig::new(configs)?;
             let rt = tokio::runtime::Runtime::new()?;
 
             // create a Spotify API and local playback client
             let local_stream_handle = rodio::OutputStreamBuilder::open_default_stream()?;
-            let client = client::Client::new(
-                auth_config,
-                Arc::new(tokio::sync::Mutex::new(local_stream_handle)),
-            );
+            let local_stream_handle = Arc::new(tokio::sync::Mutex::new(local_stream_handle));
+            let client = rt
+                .block_on(client::AppClient::new(local_stream_handle))
+                .context("construct app client")?;
+
             rt.block_on(client.new_session(None, false))
                 .context("new session")?;
 

@@ -21,7 +21,7 @@ use std::{io::Write, sync::Arc};
 
 fn init_spotify(
     client_pub: &flume::Sender<client::ClientRequest>,
-    client: &client::Client,
+    client: &client::AppClient,
     state: &state::SharedState,
 ) -> Result<()> {
     client.initialize_playback(state);
@@ -116,15 +116,12 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
     }
 
     // create a Spotify API and local playback client
-    let auth_config = auth::AuthConfig::new(configs)?;
     let local_stream_handle = rodio::OutputStreamBuilder::open_default_stream()?;
-    let client = client::Client::new(
-        auth_config,
-        Arc::new(tokio::sync::Mutex::new(local_stream_handle)),
-    );
-
-    // if session creation succeeds continue with standard procedure, else enter local mode
-    if client
+    let client = client::AppClient::new(Arc::new(tokio::sync::Mutex::new(local_stream_handle)))
+        .await
+        .context("construct app client")?;
+  
+    client
         .new_session(Some(state), true)
         .await
         .context("initialize new Spotify session")
