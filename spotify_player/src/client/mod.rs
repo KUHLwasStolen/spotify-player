@@ -77,7 +77,9 @@ fn market_query() -> Query<'static> {
 
 impl AppClient {
     /// Construct a new client
-    pub async fn new(local_stream_handle: Arc<tokio::sync::Mutex<rodio::OutputStream>>) -> Result<Self> {
+    pub async fn new(
+        local_stream_handle: Arc<tokio::sync::Mutex<rodio::OutputStream>>,
+    ) -> Result<Self> {
         let configs = config::get_config();
         let auth_config = AuthConfig::new(configs)?;
 
@@ -360,7 +362,9 @@ impl AppClient {
                     anyhow::bail!("`TransferPlayback` should be handled earlier")
                 }
                 PlayerRequest::LocalRepeatEvent => {
-                    anyhow::bail!("`LocalRepeatEvent` request can only be handled in `ClientMode::Local`")
+                    anyhow::bail!(
+                        "`LocalRepeatEvent` request can only be handled in `ClientMode::Local`"
+                    )
                 }
             },
             ClientMode::Local { queue } => {
@@ -476,11 +480,15 @@ impl AppClient {
                         // handles the rotation of repeat states
                         PlayerRequest::Repeat => {
                             let next_repeat_state = match playback.repeat_state {
-                                rspotify::model::RepeatState::Off => rspotify::model::RepeatState::Track,
+                                rspotify::model::RepeatState::Off => {
+                                    rspotify::model::RepeatState::Track
+                                }
                                 rspotify::model::RepeatState::Track => {
                                     rspotify::model::RepeatState::Context
                                 }
-                                rspotify::model::RepeatState::Context => rspotify::model::RepeatState::Off,
+                                rspotify::model::RepeatState::Context => {
+                                    rspotify::model::RepeatState::Off
+                                }
                             };
 
                             playback.repeat_state = next_repeat_state;
@@ -489,10 +497,10 @@ impl AppClient {
                         PlayerRequest::LocalRepeatEvent => {
                             if queue.entries_mut().get(current_index).is_some() {
                                 match playback.repeat_state {
-                                    rspotify::model::RepeatState::Off => {},
+                                    rspotify::model::RepeatState::Off => {}
                                     rspotify::model::RepeatState::Track => {
                                         let _ = sink.try_seek(Duration::ZERO);
-                                    },
+                                    }
                                     rspotify::model::RepeatState::Context => {
                                         // if last item in queue
                                         if current_index == q_len - 1 {
@@ -500,7 +508,7 @@ impl AppClient {
                                                 crate::local::utils::add_entry_to_sink(track, sink);
                                             }
                                         }
-                                    },
+                                    }
                                 }
                             }
                         }
@@ -561,8 +569,15 @@ impl AppClient {
                 state.data.write().user_data.user = Some(user);
             }
             ClientRequest::Player(request) => {
+                // update queue if new playback was started
+                // to not cause problems when switching from local to online
+                let update_queue = matches!(&request, PlayerRequest::StartPlayback(_, _));
+
                 let playback = state.player.read().buffered_playback.clone();
                 let playback = self.handle_player_request(request, playback).await?;
+                if update_queue {
+                    state.player.write().queue = Some(self.current_user_queue().await?);
+                }
                 state.player.write().buffered_playback = playback;
                 self.update_playback(state);
             }
@@ -1124,51 +1139,27 @@ impl AppClient {
     /// Start a playback
     async fn start_playback(&mut self, playback: Playback, device_id: Option<&str>) -> Result<()> {
         match playback.clone() {
-            Playback::Context(id, offset) => {
-                match id {
-                    ContextId::Album(id) => {
-                        self.start_context_playback(
-                            PlayContextId::from(id),
-                            device_id,
-                            offset,
-                            None,
-                        )
+            Playback::Context(id, offset) => match id {
+                ContextId::Album(id) => {
+                    self.start_context_playback(PlayContextId::from(id), device_id, offset, None)
                         .await?;
-                    }
-                    ContextId::Artist(id) => {
-                        self.start_context_playback(
-                            PlayContextId::from(id),
-                            device_id,
-                            offset,
-                            None,
-                        )
-                        .await?;
-                    }
-                    ContextId::Playlist(id) => {
-                        self.start_context_playback(
-                            PlayContextId::from(id),
-                            device_id,
-                            offset,
-                            None,
-                        )
-                        .await?;
-                    }
-                    ContextId::Show(id) => {
-                        self.start_context_playback(
-                            PlayContextId::from(id),
-                            device_id,
-                            offset,
-                            None,
-                        )
-                        .await?;
-                    }
-                    ContextId::Tracks(_) => {
-                        anyhow::bail!(
-                            "`StartPlayback` request for `tracks` context is not supported"
-                        )
-                    }
                 }
-            }
+                ContextId::Artist(id) => {
+                    self.start_context_playback(PlayContextId::from(id), device_id, offset, None)
+                        .await?;
+                }
+                ContextId::Playlist(id) => {
+                    self.start_context_playback(PlayContextId::from(id), device_id, offset, None)
+                        .await?;
+                }
+                ContextId::Show(id) => {
+                    self.start_context_playback(PlayContextId::from(id), device_id, offset, None)
+                        .await?;
+                }
+                ContextId::Tracks(_) => {
+                    anyhow::bail!("`StartPlayback` request for `tracks` context is not supported")
+                }
+            },
             Playback::URIs(ids, offset) => {
                 self.start_uris_playback(ids, device_id, offset, None)
                     .await?;
@@ -1188,11 +1179,11 @@ impl AppClient {
                     tracing::info!("THERE WAS NO SINK!!!");
                 }
                 *sink = None;
-                
+
                 let mut mode = self.mode.lock().await;
                 *mode = ClientMode::Online;
-            },
-            Playback::Local(_) => {},
+            }
+            Playback::Local(_) => {}
         }
 
         Ok(())

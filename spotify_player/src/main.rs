@@ -120,7 +120,7 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
     let client = client::AppClient::new(Arc::new(tokio::sync::Mutex::new(local_stream_handle)))
         .await
         .context("construct app client")?;
-  
+
     if client
         .new_session(Some(state), true)
         .await

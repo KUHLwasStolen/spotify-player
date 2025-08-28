@@ -92,7 +92,7 @@ fn handle_playback_change_event(
         }
 
         match playback.repeat_state {
-            rspotify::model::RepeatState::Off => {},
+            rspotify::model::RepeatState::Off => {}
             rspotify::model::RepeatState::Track | rspotify::model::RepeatState::Context => {
                 if let Some(progress) = player.playback_progress() {
                     // handle the current repeat setting
@@ -102,17 +102,21 @@ fn handle_playback_change_event(
                         && handler_state.add_track_to_queue_req_timer.elapsed()
                             > std::time::Duration::from_secs(5)
                     {
-                        client_pub.send(ClientRequest::Player(super::PlayerRequest::LocalRepeatEvent))?;
+                        client_pub.send(ClientRequest::Player(
+                            super::PlayerRequest::LocalRepeatEvent,
+                        ))?;
                         handler_state.add_track_to_queue_req_timer = std::time::Instant::now();
                     }
                 }
-            },
+            }
         }
-    } else { // online playback mode
+    } else {
+        // online playback mode
         if let Some(queue) = player.queue.as_ref() {
             // queue needs to be updated if its playing track is different from actual playback's playing track
             if let Some(queue_track) = queue.currently_playing.as_ref() {
-                if queue_track.id().expect("null track_id") != *id.as_ref().expect("null track_id") {
+                if queue_track.id().expect("null track_id") != *id.as_ref().expect("null track_id")
+                {
                     client_pub.send(ClientRequest::GetCurrentUserQueue)?;
                 }
             }
