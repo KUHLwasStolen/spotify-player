@@ -454,9 +454,6 @@ impl AppClient {
                                         let track = &mut queue.entries_mut()[i];
                                         crate::local::utils::add_entry_to_sink(track, sink);
                                     }
-                                    let _ = sink.try_seek(current_pos);
-                                    sink.play();
-                                    playback.is_playing = true;
                                 } else {
                                     sink.clear();
                                     let current = queue.entries_mut().remove(current_index);
@@ -467,11 +464,13 @@ impl AppClient {
                                     for track in queue.entries_mut() {
                                         crate::local::utils::add_entry_to_sink(track, sink);
                                     }
-                                    let _ = sink.try_seek(current_pos);
-                                    sink.play();
-                                    playback.is_playing = true;
                                 }
+
+                                let _ = sink.try_seek(current_pos);
+                                sink.play();
+                                playback.is_playing = true;
                             }
+
                             playback.shuffle_state = !playback.shuffle_state;
                         }
                         // handles the rotation of repeat states
@@ -1124,7 +1123,7 @@ impl AppClient {
 
     /// Start a playback
     async fn start_playback(&mut self, playback: Playback, device_id: Option<&str>) -> Result<()> {
-        match playback {
+        match playback.clone() {
             Playback::Context(id, offset) => {
                 match id {
                     ContextId::Album(id) => {
@@ -1169,19 +1168,31 @@ impl AppClient {
                         )
                     }
                 }
-
-                let mut mode = self.mode.lock().await;
-                *mode = ClientMode::Online;
             }
             Playback::URIs(ids, offset) => {
                 self.start_uris_playback(ids, device_id, offset, None)
                     .await?;
-                let mut mode = self.mode.lock().await;
-                *mode = ClientMode::Online;
             }
             Playback::Local(entries) => {
                 self.start_local_playback(entries).await;
             }
+        }
+
+        match playback {
+            Playback::Context(_, _) | Playback::URIs(_, _) => {
+                let mut sink = self.current_local_sink.lock().await;
+                if let Some(sink) = &(*sink) {
+                    sink.stop();
+                    tracing::info!("STOPPED SINK!!!!");
+                } else {
+                    tracing::info!("THERE WAS NO SINK!!!");
+                }
+                *sink = None;
+                
+                let mut mode = self.mode.lock().await;
+                *mode = ClientMode::Online;
+            },
+            Playback::Local(_) => {},
         }
 
         Ok(())

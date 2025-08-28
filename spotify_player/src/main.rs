@@ -121,7 +121,7 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
         .await
         .context("construct app client")?;
   
-    client
+    if client
         .new_session(Some(state), true)
         .await
         .context("initialize new Spotify session")

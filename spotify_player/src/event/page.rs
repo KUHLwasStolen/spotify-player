@@ -559,8 +559,9 @@ fn handle_command_for_local_page(
                             to_play.push(entries.entries()[i].clone());
                         }
 
-                        let local_playback = Playback::Local(LocalEntries::new(to_play));
+                        let _ = client_pub.send(ClientRequest::Player(PlayerRequest::Pause));
 
+                        let local_playback = Playback::Local(LocalEntries::new(to_play));
                         return client_pub
                             .send(ClientRequest::Player(PlayerRequest::StartPlayback(
                                 local_playback,
