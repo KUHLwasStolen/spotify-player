@@ -450,6 +450,13 @@ To move the focus from the search input to the other windows such as track resul
 `spotify_player` can not only play songs from Spotify, but also play songs directly from your own local music library.  
 By default, you can access the local player via pressing `g o` _("go offline")_ and it will show you your `local_library_root` directory as specified in the config.  
 
+Supported file types:
+- MP3
+- MP4
+- FLAC
+- WAV
+- Vorbis
+
 ## Configurations
 
 By default, `spotify_player` will look into `$HOME/.config/spotify-player` for application's configuration files. This can be changed by either specifying `-c <FOLDER_PATH>` or `--config-folder <FOLDER_PATH>` option.

@@ -84,11 +84,11 @@ pub fn get_local_entries(path: &std::path::Path) -> LocalEntries {
     LocalEntries::new(entries)
 }
 
-/// Returns if a file is playable based on its extension in the name (to be improved)
+/// Returns if a file is playable based on its extension
 fn is_playable(filename: &str) -> bool {
     std::path::Path::new(filename)
         .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("mp3") || ext.eq_ignore_ascii_case("flac"))
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("mp3") || ext.eq_ignore_ascii_case("flac") || ext.eq_ignore_ascii_case("wav") || ext.eq_ignore_ascii_case("ogg") || ext.eq_ignore_ascii_case("mp4"))
 }
 
 pub fn add_entry_to_sink(entry: &mut LocalEntry, sink: &Sink) {
